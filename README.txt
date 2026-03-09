@@ -127,7 +127,7 @@ Prerequisites:
 
 1. Clone the repository:
 
-     git clone https://github.com/YOUR_USERNAME/rag-llm-workflow.git
+     git clone https://github.com/4nechoic-hub/rag-llm-workflow.git
      cd rag-llm-workflow
 
 2. Create a virtual environment (recommended):
