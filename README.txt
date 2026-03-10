@@ -9,19 +9,22 @@ Each implementation solves the same core problem — grounded Q&A,
 structured extraction, and document comparison over PDF collections —
 but showcases different design philosophies and engineering trade-offs.
 
+The project includes a head-to-head evaluation framework with
+LLM-as-judge scoring, an interactive Streamlit demo, and a detailed
+writeup on the design decisions behind each approach.
+
 
 Project Overview
 ----------------
 
-This project contains three standalone Python scripts, each
-implementing a RAG pipeline using a different approach:
-
   1. Manual Pipeline        (rag_pipeline_spyder.py)
   2. LangGraph Agent        (langgraph_research_agent.py)
   3. LlamaIndex Pipeline    (llamaindex_rag_pipeline.py)
+  4. Evaluation Framework   (evaluate_pipelines.py)
+  5. Interactive Demo        (streamlit_app.py)
+  6. Design Writeup          (DESIGN_TRADEOFFS.md)
 
-All three scripts share the same folder structure and .env
-configuration, so you can run any of them from the same project root.
+All scripts share the same folder structure and .env configuration.
 
 
 Architecture
@@ -42,8 +45,6 @@ Architecture
    - Pickle-based embedding cache for cost efficiency
    - Three task modes: Q&A, structured extraction, document comparison
    - Cell-by-cell execution via # %% markers in VS Code / Spyder
-
-   Dependencies: PyMuPDF, numpy, pandas, scikit-learn, openai
 
 
 2. LANGGRAPH RESEARCH AGENT (langgraph_research_agent.py)
@@ -76,15 +77,11 @@ Architecture
    - Self-critique loop with structured JSON scoring
    - Conditional routing (refine vs finalise) based on quality threshold
    - Configurable max iterations to control API costs
-   - Full state visibility at every node for debugging
-
-   Dependencies: langgraph, PyMuPDF, numpy, pandas, scikit-learn, openai
 
 
 3. LLAMAINDEX PIPELINE (llamaindex_rag_pipeline.py)
    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   A framework-based approach using LlamaIndex's high-level abstractions
-   for production-style RAG.
+   A framework-based approach using LlamaIndex's high-level abstractions.
 
    PDFs --> SimpleDirectoryReader (auto PDF parsing)
         --> SentenceSplitter (sentence-aware chunking)
@@ -98,10 +95,53 @@ Architecture
    - Index persistence to disk (avoids re-embedding on restart)
    - Custom prompt templates for Q&A, extraction, and comparison
    - Swappable components (LLM, embeddings, vector store)
-   - Direct retriever access for debugging chunk quality
 
-   Dependencies: llama-index-core, llama-index-llms-openai,
-                 llama-index-embeddings-openai, llama-index-readers-file
+
+4. EVALUATION FRAMEWORK (evaluate_pipelines.py)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   Head-to-head comparison of all three pipelines using LLM-as-judge.
+
+   For each test query, the evaluation runs all three pipelines and
+   measures:
+   - Answer quality (completeness, grounding, clarity — each 0-10)
+   - Retrieval metrics (similarity scores, chunk counts)
+   - Latency per query
+   - Cross-pipeline agreement (do the three converge on similar answers?)
+
+   Outputs:
+   - Console summary table with best pipeline per dimension
+   - Detailed CSV (eval_results/evaluation_results.csv)
+   - Six comparison charts:
+       01_overall_quality.png ... Bar chart of average scores
+       02_quality_breakdown.png . Grouped bars (completeness/grounding/clarity)
+       03_latency.png .......... Latency comparison
+       04_per_query.png ........ Per-query scores across pipelines
+       05_agreement.png ........ Cross-pipeline answer agreement
+       06_radar.png ............ Radar chart of pipeline profiles
+
+
+5. INTERACTIVE DEMO (streamlit_app.py)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   A Streamlit web interface for querying documents interactively.
+
+   Features:
+   - Sidebar with pipeline selector, task type, and settings
+   - Single pipeline mode or "Compare All" side-by-side view
+   - Expandable source cards with retrieval scores
+   - Latency display per query
+   - Live PDF folder status
+
+   Run with:  streamlit run streamlit_app.py
+
+
+6. DESIGN WRITEUP (DESIGN_TRADEOFFS.md)
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   A blog-style analysis of the design decisions and trade-offs
+   across the three approaches, including:
+   - When to use each approach
+   - What the evaluation revealed
+   - A practical decision framework
+   - Key takeaways for production RAG systems
 
 
 Comparison of Approaches
@@ -133,22 +173,15 @@ Prerequisites:
 2. Create a virtual environment (recommended):
 
      python -m venv venv
-     venv\Scripts\activate          (Windows)
      source venv/bin/activate       (Mac/Linux)
+     venv\Scripts\activate          (Windows)
 
-3. Install dependencies:
+3. Install all dependencies:
 
-     For the manual pipeline:
-       pip install PyMuPDF numpy pandas scikit-learn openai python-dotenv
-
-     For the LangGraph agent (adds langgraph):
-       pip install langgraph
-
-     For the LlamaIndex pipeline:
-       pip install llama-index-core llama-index-llms-openai llama-index-embeddings-openai llama-index-readers-file
-
-     Or install everything at once:
-       pip install PyMuPDF numpy pandas scikit-learn openai python-dotenv langgraph llama-index-core llama-index-llms-openai llama-index-embeddings-openai llama-index-readers-file
+     pip install PyMuPDF numpy pandas scikit-learn openai python-dotenv \
+                 langgraph matplotlib streamlit \
+                 llama-index-core llama-index-llms-openai \
+                 llama-index-embeddings-openai llama-index-readers-file
 
 4. Create a .env file in the project root:
 
@@ -161,59 +194,27 @@ Prerequisites:
      |-- pdfs/
      |   |-- paper1.pdf
      |   |-- paper2.pdf
-     |-- rag_pipeline_spyder.py
-     |-- langgraph_research_agent.py
-     |-- llamaindex_rag_pipeline.py
-     |-- README.txt
+     |-- (scripts...)
 
 
 Usage
 -----
 
-All three scripts use # %% cell markers for VS Code / Spyder.
-You can run cells individually (Ctrl+Enter in VS Code with the
-Jupyter extension) or execute the entire script.
+All Python scripts use # %% cell markers for VS Code / Spyder.
+Run cells individually or execute entire scripts.
 
-Manual Pipeline:
-  python rag_pipeline_spyder.py
-
-LangGraph Agent:
-  python langgraph_research_agent.py
-
-LlamaIndex Pipeline:
-  python llamaindex_rag_pipeline.py
+  Manual Pipeline:      python rag_pipeline_spyder.py
+  LangGraph Agent:      python langgraph_research_agent.py
+  LlamaIndex Pipeline:  python llamaindex_rag_pipeline.py
+  Evaluation:           python evaluate_pipelines.py
+  Streamlit Demo:       streamlit run streamlit_app.py
 
 Each script will:
   1. Load and process PDFs from the pdfs/ folder
   2. Create embeddings (cached after first run)
   3. Run example queries and display results
 
-Edit the query variables in the example cells to test your own
-questions against your documents.
-
-
-Example Output (LangGraph Agent)
---------------------------------
-
-  >>> NODE: PLAN
-      Sub-questions (3):
-        1. What measurement instruments were used?
-        2. What was the experimental configuration?
-        3. What data acquisition parameters were applied?
-
-  >>> NODE: RETRIEVE
-      Retrieved 10 unique chunks
-
-  >>> NODE: SYNTHESISE
-      Draft produced (iteration 0)
-
-  >>> NODE: CRITIQUE
-      Score: 8.3/10 (threshold: 7)
-      Iteration: 1/3
-
-      -> ROUTING: Score 8.3 >= 7, finalising
-
-  >>> NODE: FINALISE
+The Streamlit app opens at http://localhost:8501 in your browser.
 
 
 Cost Notes
@@ -224,6 +225,7 @@ This project uses OpenAI's API. Approximate costs per run:
   - Embedding 66 chunks: ~$0.001 (text-embedding-3-small)
   - Single Q&A query:    ~$0.002 (gpt-4.1-mini)
   - LangGraph full run:  ~$0.01-0.03 (multiple LLM calls per iteration)
+  - Full evaluation:     ~$0.10-0.20 (5 queries x 3 pipelines + judge calls)
 
 Embeddings are cached after the first run, so subsequent queries
 only incur LLM generation costs. A $5 credit is more than sufficient
@@ -238,11 +240,15 @@ Project Structure
   |-- rag_pipeline_spyder.py ........ Manual RAG pipeline (from scratch)
   |-- langgraph_research_agent.py ... LangGraph multi-step research agent
   |-- llamaindex_rag_pipeline.py .... LlamaIndex framework-based pipeline
+  |-- evaluate_pipelines.py ......... Head-to-head evaluation with charts
+  |-- streamlit_app.py .............. Interactive Streamlit web demo
+  |-- DESIGN_TRADEOFFS.md ........... Design trade-offs writeup
   |
   |-- pdfs/ ......................... Your PDF documents go here
-  |-- cache/ ........................ Auto-created: embedding cache (manual + LangGraph)
+  |-- cache/ ........................ Auto-created: embedding cache
   |-- llamaindex_storage/ ........... Auto-created: persisted LlamaIndex index
-  |-- .env .......................... Your OpenAI API key (not committed to git)
+  |-- eval_results/ ................. Auto-created: evaluation CSV and charts
+  |-- .env .......................... Your OpenAI API key (not committed)
   |-- .gitignore
   |-- README.txt
 
@@ -254,6 +260,8 @@ Technologies
   - OpenAI API (gpt-4.1-mini, text-embedding-3-small)
   - LangGraph (StateGraph, conditional edges, stateful orchestration)
   - LlamaIndex (VectorStoreIndex, SimpleDirectoryReader, PromptTemplate)
+  - Streamlit (interactive web UI)
+  - Matplotlib (evaluation charts)
   - PyMuPDF (PDF text extraction)
   - scikit-learn (cosine similarity)
   - NumPy, Pandas (data processing)
