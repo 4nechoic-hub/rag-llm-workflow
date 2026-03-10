@@ -1,0 +1,9 @@
+echo ".env
+cache/
+llamaindex_storage/
+eval_results/
+__pycache__/
+*.pyc
+venv/
+.venv/
+.DS_Store" > .gitignore
