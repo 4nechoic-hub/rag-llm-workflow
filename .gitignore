@@ -1,4 +1,4 @@
-echo ".env
+.env
 cache/
 llamaindex_storage/
 eval_results/
@@ -6,4 +6,4 @@ __pycache__/
 *.pyc
 venv/
 .venv/
-.DS_Store" > .gitignore
+.DS_Store
