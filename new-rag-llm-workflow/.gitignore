@@ -1,0 +1,32 @@
+# Environment
+.env
+.env.local
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Caches & generated data
+cache/
+llamaindex_storage/
+eval_results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# PDFs (user-provided, not tracked)
+pdfs/*.pdf
+
+# Jupyter
+.ipynb_checkpoints/
