@@ -4,6 +4,8 @@ RAG Pipeline Evaluation — Head-to-Head Comparison
 
 Compares Manual Pipeline vs LangGraph Agent vs LlamaIndex across:
   - Answer quality (LLM-as-judge: completeness, grounding, clarity)
+  - Citation accuracy (do inline citations match retrieved sources?)
+  - Hallucination detection (are there unsupported claims?)
   - Retrieval metrics (similarity scores, chunk counts)
   - Latency per query
   - Cross-pipeline agreement
@@ -62,6 +64,113 @@ def judge_answer(query, answer):
         return json.loads(cleaned)
     except Exception as e:
         return {"completeness": 0, "grounding": 0, "clarity": 0, "overall": 0, "feedback": f"Parse error: {e}"}
+
+
+def judge_citation_accuracy(answer, sources):
+    """
+    Score whether inline citations in the answer match actually retrieved sources.
+
+    Checks two things:
+      - Do the cited filenames and page numbers appear in the retrieved source list?
+      - Are there claims with citations that don't match any retrieved source?
+
+    Returns citation_accuracy (0-10) and details.
+    """
+    source_str = "\n".join(
+        f"  - {s['file']} | Page {s['page']}"
+        for s in sources
+    ) if sources else "  (no sources retrieved)"
+
+    system = (
+        "You are a citation accuracy evaluator for a RAG system.\n\n"
+        "You will receive an answer and a list of actually retrieved sources.\n"
+        "Your job is to check whether the inline citations in the answer "
+        "(e.g. [Source: filename.pdf | Page X]) match the retrieved source list.\n\n"
+        "Score on two dimensions (each 0-10):\n"
+        "  - Citation precision: What fraction of citations in the answer "
+        "reference a source that was actually retrieved? "
+        "(10 = all citations match, 0 = none match)\n"
+        "  - Citation coverage: What fraction of retrieved sources are cited "
+        "at least once? (10 = all sources cited, 0 = none cited)\n\n"
+        "If the answer contains NO inline citations at all, "
+        "citation_precision = 0 and citation_coverage = 0.\n\n"
+        "Return ONLY valid JSON:\n"
+        '{"citation_precision": <int>, "citation_coverage": <int>, '
+        '"citation_accuracy": <average of the two>, '
+        '"num_citations_found": <int>, "num_valid_citations": <int>, '
+        '"feedback": "<one sentence>"}'
+    )
+    user = (
+        f"Answer to evaluate:\n{answer}\n\n"
+        f"Actually retrieved sources:\n{source_str}"
+    )
+
+    try:
+        raw = call_llm(system, user)
+        cleaned = raw.strip().removeprefix("```json").removesuffix("```").strip()
+        return json.loads(cleaned)
+    except Exception as e:
+        return {
+            "citation_precision": 0, "citation_coverage": 0,
+            "citation_accuracy": 0, "num_citations_found": 0,
+            "num_valid_citations": 0, "feedback": f"Parse error: {e}",
+        }
+
+
+def judge_hallucination(query, answer, sources):
+    """
+    Detect unsupported claims (hallucinations) in the answer.
+
+    The judge checks whether the answer contains specific factual claims
+    that could not reasonably be derived from the listed retrieved sources.
+
+    Returns hallucination_score (0-10, where 10 = no hallucinations)
+    and a list of flagged claims.
+    """
+    source_str = "\n".join(
+        f"  - {s['file']} | Page {s['page']}"
+        for s in sources
+    ) if sources else "  (no sources retrieved)"
+
+    system = (
+        "You are a hallucination detector for a RAG system.\n\n"
+        "A RAG system retrieves document chunks and generates an answer. "
+        "Your job is to identify claims in the answer that are NOT supported "
+        "by the retrieved sources.\n\n"
+        "A hallucination is a specific factual claim (a number, name, method, "
+        "finding, or conclusion) that appears in the answer but could not "
+        "reasonably be derived from the listed source documents.\n\n"
+        "Do NOT flag:\n"
+        "  - General transitional or structural language\n"
+        "  - Hedging phrases like 'the documents suggest'\n"
+        "  - Explicit statements of insufficient evidence\n\n"
+        "Score (0-10):\n"
+        "  10 = Every factual claim is plausibly grounded in the sources\n"
+        "   5 = Some claims are unsupported but the core answer is grounded\n"
+        "   0 = The answer is mostly fabricated\n\n"
+        "Return ONLY valid JSON:\n"
+        '{"hallucination_score": <int>, '
+        '"num_claims_checked": <int>, '
+        '"num_unsupported_claims": <int>, '
+        '"flagged_claims": ["<claim 1>", "<claim 2>"], '
+        '"feedback": "<one sentence>"}'
+    )
+    user = (
+        f"Question: {query}\n\n"
+        f"Answer to evaluate:\n{answer}\n\n"
+        f"Retrieved sources available to the system:\n{source_str}"
+    )
+
+    try:
+        raw = call_llm(system, user)
+        cleaned = raw.strip().removeprefix("```json").removesuffix("```").strip()
+        return json.loads(cleaned)
+    except Exception as e:
+        return {
+            "hallucination_score": 0, "num_claims_checked": 0,
+            "num_unsupported_claims": 0, "flagged_claims": [],
+            "feedback": f"Parse error: {e}",
+        }
 
 
 def judge_agreement(answer_a, answer_b):
@@ -133,13 +242,26 @@ def run_full_evaluation():
                 result = pipe_fn(query)
                 answer = result.answer
                 latency = result.latency
+                source_dicts = result.source_dicts
             except Exception as e:
                 print(f"    [ERROR] {pipe_name}: {e}")
                 answer, latency = f"ERROR: {e}", 0
+                source_dicts = []
                 result = PipelineResult(answer=answer)
 
             answers[pipe_name] = answer
+
+            # Quality scoring
             scores = judge_answer(query, answer)
+            print(f"    Quality: {scores.get('overall', '?')}/10 | Latency: {latency:.2f}s")
+
+            # Citation accuracy
+            citation = judge_citation_accuracy(answer, source_dicts)
+            print(f"    Citation accuracy: {citation.get('citation_accuracy', '?')}/10")
+
+            # Hallucination detection
+            halluc = judge_hallucination(query, answer, source_dicts)
+            print(f"    Hallucination score: {halluc.get('hallucination_score', '?')}/10")
 
             row = {
                 "query_id": qid, "query": query, "query_type": qtype,
@@ -150,14 +272,27 @@ def run_full_evaluation():
                 "num_chunks": result.num_chunks,
                 "quality_score": result.metadata.get("quality_score") if result.metadata else None,
                 "iterations": result.metadata.get("iterations") if result.metadata else None,
+                # Quality dimensions
                 "completeness": scores.get("completeness", 0),
                 "grounding": scores.get("grounding", 0),
                 "clarity": scores.get("clarity", 0),
                 "overall": scores.get("overall", 0),
                 "feedback": scores.get("feedback", ""),
+                # Citation accuracy
+                "citation_precision": citation.get("citation_precision", 0),
+                "citation_coverage": citation.get("citation_coverage", 0),
+                "citation_accuracy": citation.get("citation_accuracy", 0),
+                "num_citations_found": citation.get("num_citations_found", 0),
+                "num_valid_citations": citation.get("num_valid_citations", 0),
+                "citation_feedback": citation.get("feedback", ""),
+                # Hallucination
+                "hallucination_score": halluc.get("hallucination_score", 0),
+                "num_claims_checked": halluc.get("num_claims_checked", 0),
+                "num_unsupported_claims": halluc.get("num_unsupported_claims", 0),
+                "flagged_claims": json.dumps(halluc.get("flagged_claims", [])),
+                "hallucination_feedback": halluc.get("feedback", ""),
             }
             all_results.append(row)
-            print(f"    Score: {scores.get('overall', '?')}/10 | Latency: {latency:.2f}s")
 
         # Cross-pipeline agreement
         pipe_names = list(answers.keys())
@@ -174,6 +309,12 @@ def run_full_evaluation():
                     "completeness": 0, "grounding": 0, "clarity": 0,
                     "overall": agreement.get("agreement", 0),
                     "feedback": agreement.get("note", ""),
+                    "citation_precision": 0, "citation_coverage": 0,
+                    "citation_accuracy": 0, "num_citations_found": 0,
+                    "num_valid_citations": 0, "citation_feedback": "",
+                    "hallucination_score": 0, "num_claims_checked": 0,
+                    "num_unsupported_claims": 0, "flagged_claims": "[]",
+                    "hallucination_feedback": "",
                 })
 
     return pd.DataFrame(all_results)
@@ -200,9 +341,10 @@ def generate_charts(df):
     plt.savefig(f"{EVAL_OUTPUT_DIR}/01_overall_quality.png", dpi=150)
     plt.close()
 
-    # Chart 2: Quality Breakdown
-    fig, ax = plt.subplots(figsize=(10, 5))
-    dims = ["completeness", "grounding", "clarity"]
+    # Chart 2: Quality Breakdown (includes citation + hallucination)
+    fig, ax = plt.subplots(figsize=(14, 5))
+    dims = ["completeness", "grounding", "clarity", "citation_accuracy", "hallucination_score"]
+    dim_labels = ["Completeness", "Grounding", "Clarity", "Citation\nAccuracy", "Hallucination\nFreedom"]
     x = np.arange(len(dims))
     width = 0.25
     for i, pipe in enumerate(PIPE_ORDER):
@@ -210,11 +352,11 @@ def generate_charts(df):
         vals = [pipe_df[d].mean() for d in dims]
         bars = ax.bar(x + i*width, vals, width, label=pipe, color=COLOURS[pipe], edgecolor="white")
         for bar, val in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()+0.1, f"{val:.1f}", ha="center", fontsize=9)
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()+0.1, f"{val:.1f}", ha="center", fontsize=8)
     ax.set_ylabel("Average Score (0-10)")
     ax.set_title("Answer Quality Breakdown", fontweight="bold")
     ax.set_xticks(x + width)
-    ax.set_xticklabels(["Completeness", "Grounding", "Clarity"])
+    ax.set_xticklabels(dim_labels)
     ax.set_ylim(0, 10)
     ax.legend(frameon=False)
     ax.spines[["top", "right"]].set_visible(False)
@@ -275,26 +417,72 @@ def generate_charts(df):
         plt.savefig(f"{EVAL_OUTPUT_DIR}/05_agreement.png", dpi=150)
         plt.close()
 
-    # Chart 6: Radar
-    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
-    categories = ["Completeness", "Grounding", "Clarity", "Speed"]
+    # Chart 6: Radar (includes citation accuracy and hallucination)
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+    categories = ["Completeness", "Grounding", "Clarity", "Citation\nAccuracy", "Hallucination\nFreedom", "Speed"]
     N = len(categories)
     angles = [n / float(N) * 2 * np.pi for n in range(N)]
     angles += angles[:1]
     for pipe in PIPE_ORDER:
         pipe_df = df_pipes[df_pipes["pipeline"] == pipe]
-        vals = [pipe_df["completeness"].mean(), pipe_df["grounding"].mean(),
-                pipe_df["clarity"].mean(), 10 - min(pipe_df["latency_s"].mean(), 10)]
+        vals = [
+            pipe_df["completeness"].mean(),
+            pipe_df["grounding"].mean(),
+            pipe_df["clarity"].mean(),
+            pipe_df["citation_accuracy"].mean(),
+            pipe_df["hallucination_score"].mean(),
+            10 - min(pipe_df["latency_s"].mean(), 10),
+        ]
         vals += vals[:1]
         ax.plot(angles, vals, "o-", linewidth=2, label=pipe, color=COLOURS[pipe])
         ax.fill(angles, vals, alpha=0.1, color=COLOURS[pipe])
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories)
+    ax.set_xticklabels(categories, fontsize=9)
     ax.set_ylim(0, 10)
     ax.set_title("Pipeline Profile Comparison", fontweight="bold", pad=20)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), frameon=False)
+    ax.legend(loc="upper right", bbox_to_anchor=(1.35, 1.1), frameon=False)
     plt.tight_layout()
     plt.savefig(f"{EVAL_OUTPUT_DIR}/06_radar.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+    # Chart 7: Citation & Hallucination Detail
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # 7a: Citation precision vs coverage
+    ax = axes[0]
+    x = np.arange(len(PIPE_ORDER))
+    width = 0.35
+    prec = [df_pipes[df_pipes["pipeline"] == p]["citation_precision"].mean() for p in PIPE_ORDER]
+    cov = [df_pipes[df_pipes["pipeline"] == p]["citation_coverage"].mean() for p in PIPE_ORDER]
+    bars1 = ax.bar(x - width/2, prec, width, label="Precision", color="#4C78A8", edgecolor="white")
+    bars2 = ax.bar(x + width/2, cov, width, label="Coverage", color="#72B7B2", edgecolor="white")
+    for bar, val in zip(bars1, prec):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()+0.15, f"{val:.1f}", ha="center", fontsize=9)
+    for bar, val in zip(bars2, cov):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()+0.15, f"{val:.1f}", ha="center", fontsize=9)
+    ax.set_ylabel("Score (0-10)")
+    ax.set_title("Citation Precision vs Coverage", fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(PIPE_ORDER)
+    ax.set_ylim(0, 10)
+    ax.legend(frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    # 7b: Hallucination score + unsupported claim count
+    ax = axes[1]
+    halluc_scores = [df_pipes[df_pipes["pipeline"] == p]["hallucination_score"].mean() for p in PIPE_ORDER]
+    unsup_counts = [df_pipes[df_pipes["pipeline"] == p]["num_unsupported_claims"].mean() for p in PIPE_ORDER]
+    bars = ax.bar(PIPE_ORDER, halluc_scores, color=[COLOURS[p] for p in PIPE_ORDER], edgecolor="white")
+    for bar, val, count in zip(bars, halluc_scores, unsup_counts):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height()+0.15,
+                f"{val:.1f}\n({count:.1f} flagged)", ha="center", fontsize=9, fontweight="bold")
+    ax.set_ylabel("Hallucination Freedom (0-10)")
+    ax.set_title("Hallucination Detection", fontweight="bold")
+    ax.set_ylim(0, 10)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig(f"{EVAL_OUTPUT_DIR}/07_citation_hallucination.png", dpi=150)
     plt.close()
 
     print(f"  Charts saved to {EVAL_OUTPUT_DIR}/")
@@ -307,20 +495,32 @@ def print_summary(df):
     print(f"\n{'='*70}\nEVALUATION SUMMARY\n{'='*70}")
     summary = df_pipes.groupby("pipeline").agg({
         "overall": "mean", "completeness": "mean",
-        "grounding": "mean", "clarity": "mean", "latency_s": "mean",
+        "grounding": "mean", "clarity": "mean",
+        "citation_accuracy": "mean", "hallucination_score": "mean",
+        "latency_s": "mean",
     }).reindex(PIPE_ORDER)
-    summary.columns = ["Overall", "Complete", "Grounded", "Clarity", "Latency(s)"]
-    for col in ["Overall", "Complete", "Grounded", "Clarity"]:
+    summary.columns = ["Overall", "Complete", "Grounded", "Clarity",
+                        "Citation", "Halluc.Free", "Latency(s)"]
+    for col in ["Overall", "Complete", "Grounded", "Clarity", "Citation", "Halluc.Free"]:
         summary[col] = summary[col].round(1)
     summary["Latency(s)"] = summary["Latency(s)"].round(2)
     print(f"\n{summary.to_string()}")
 
     print(f"\n{'-'*70}\nBEST PIPELINE PER DIMENSION\n{'-'*70}")
-    for col in ["Overall", "Complete", "Grounded", "Clarity"]:
+    for col in ["Overall", "Complete", "Grounded", "Clarity", "Citation", "Halluc.Free"]:
         best = summary[col].idxmax()
         print(f"  {col:12s}: {best} ({summary.loc[best, col]})")
     fastest = summary["Latency(s)"].idxmin()
     print(f"  {'Speed':12s}: {fastest} ({summary.loc[fastest, 'Latency(s)']}s)")
+
+    # Hallucination detail
+    print(f"\n{'-'*70}\nHALLUCINATION DETAIL\n{'-'*70}")
+    for pipe in PIPE_ORDER:
+        pipe_df = df_pipes[df_pipes["pipeline"] == pipe]
+        avg_unsup = pipe_df["num_unsupported_claims"].mean()
+        avg_checked = pipe_df["num_claims_checked"].mean()
+        print(f"  {pipe:12s}: {avg_unsup:.1f} unsupported claims / {avg_checked:.1f} checked (avg per query)")
+
     print(f"\n{'='*70}\n")
 
 
