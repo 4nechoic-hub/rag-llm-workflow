@@ -21,6 +21,7 @@ from src.core.embedder import embed_chunks
 from src.core.llm import call_llm
 from src.core.pdf_loader import load_all_pdfs
 from src.core.retriever import format_context, retrieve_top_k
+from src.core.types import PipelineResult, SourceChunk
 from src.config import MAX_ITERATIONS, PDF_FOLDER, QUALITY_THRESHOLD, TOP_K
 
 
@@ -407,8 +408,8 @@ def run_research_agent(
     *,
     task_type: str = "Question Answering",
     top_k: int = TOP_K,
-) -> dict:
-    """Run a query through the research agent and return the final state."""
+) -> PipelineResult:
+    """Run a query through the research agent and return a PipelineResult."""
     initial_state = {
         "query": query,
         "task_type": task_type,
@@ -425,4 +426,26 @@ def run_research_agent(
         "iteration": 0,
         "final_answer": "",
     }
-    return agent.invoke(initial_state)
+    state = agent.invoke(initial_state)
+
+    # Convert state sources (list of dicts) to SourceChunk list
+    source_chunks = [
+        SourceChunk(
+            file=s["file"],
+            page=s["page"],
+            score=s.get("score"),
+            chunk_id=s.get("chunk_id", ""),
+        )
+        for s in state.get("sources", [])
+    ]
+
+    return PipelineResult(
+        answer=state.get("answer") or state.get("final_answer") or "",
+        sources=source_chunks,
+        metadata={
+            "quality_score": state.get("quality_score"),
+            "iterations": state.get("iteration"),
+            "sub_questions": state.get("sub_questions", []),
+            "critique": state.get("critique", ""),
+        },
+    )

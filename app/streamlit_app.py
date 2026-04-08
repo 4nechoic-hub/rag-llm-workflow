@@ -157,7 +157,7 @@ def load_chatbot():
 
 
 # ==========================================================
-# QUERY FUNCTIONS
+# QUERY FUNCTIONS — all return PipelineResult
 # ==========================================================
 
 def query_manual(query, task, top_k):
@@ -167,20 +167,13 @@ def query_manual(query, task, top_k):
     )
     t0 = time.time()
     if task == "Question Answering":
-        answer, retrieved = answer_question(query, df_chunks, embeddings, top_k=top_k)
+        result = answer_question(query, df_chunks, embeddings, top_k=top_k)
     elif task == "Structured Extraction":
-        answer, retrieved = extract_structured_summary(query, df_chunks, embeddings, top_k=top_k)
+        result = extract_structured_summary(query, df_chunks, embeddings, top_k=top_k)
     else:
-        answer, retrieved = compare_documents(query, df_chunks, embeddings, top_k=top_k)
-    latency = time.time() - t0
-
-    sources = []
-    for _, row in retrieved.iterrows():
-        sources.append({
-            "file": row["doc_name"], "page": row["page_number"],
-            "score": round(row["similarity"], 4), "chunk_id": row["chunk_id"],
-        })
-    return answer, sources, latency, None
+        result = compare_documents(query, df_chunks, embeddings, top_k=top_k)
+    result.latency = time.time() - t0
+    return result
 
 
 def query_langgraph(query, task, top_k):
@@ -189,17 +182,8 @@ def query_langgraph(query, task, top_k):
 
     t0 = time.time()
     result = run_research_agent(agent, query, task_type=task, top_k=top_k)
-    latency = time.time() - t0
-
-    answer = result.get("answer") or result.get("final_answer") or "No answer generated."
-    sources = result.get("sources", [])
-    metadata = {
-        "quality_score": result.get("quality_score"),
-        "iterations": result.get("iteration"),
-        "sub_questions": result.get("sub_questions", []),
-        "critique": result.get("critique", ""),
-    }
-    return answer, sources, latency, metadata
+    result.latency = time.time() - t0
+    return result
 
 
 def query_llamaindex(query, task, top_k):
@@ -210,64 +194,70 @@ def query_llamaindex(query, task, top_k):
 
     t0 = time.time()
     if task == "Question Answering":
-        answer, sources = answer_question(query, index, top_k=top_k)
+        result = answer_question(query, index, top_k=top_k)
     elif task == "Structured Extraction":
-        answer, sources = extract_structured(query, index, top_k=top_k)
+        result = extract_structured(query, index, top_k=top_k)
     else:
-        answer, sources = compare_documents(query, index, top_k=top_k)
-    latency = time.time() - t0
-
-    for source in sources:
-        source.setdefault("chunk_id", "")
-    return answer, sources, latency, None
+        result = compare_documents(query, index, top_k=top_k)
+    result.latency = time.time() - t0
+    return result
 
 
 # ==========================================================
-# DISPLAY HELPERS
+# DISPLAY HELPERS — unified for all pipelines
 # ==========================================================
 
-def display_result(pipe_name, answer, sources, latency, show_sources, show_timing, metadata=None):
-    badge_map = {
-        "Manual Pipeline": "badge-manual", "LangGraph Agent": "badge-langgraph",
-        "LlamaIndex": "badge-llamaindex",
-    }
-    card_map = {
-        "Manual Pipeline": "", "LangGraph Agent": "source-card-langgraph",
-        "LlamaIndex": "source-card-llamaindex",
-    }
+BADGE_MAP = {
+    "Manual Pipeline": "badge-manual",
+    "LangGraph Agent": "badge-langgraph",
+    "LlamaIndex": "badge-llamaindex",
+}
+CARD_MAP = {
+    "Manual Pipeline": "",
+    "LangGraph Agent": "source-card-langgraph",
+    "LlamaIndex": "source-card-llamaindex",
+}
 
-    st.markdown(f'<span class="{badge_map.get(pipe_name, "badge-manual")}">{pipe_name}</span>', unsafe_allow_html=True)
+
+def display_result(pipe_name, result, show_sources, show_timing):
+    """Display a PipelineResult in the Streamlit UI."""
+    st.markdown(
+        f'<span class="{BADGE_MAP.get(pipe_name, "badge-manual")}">{pipe_name}</span>',
+        unsafe_allow_html=True,
+    )
     if show_timing:
-        st.caption(f"⏱️ {latency:.2f}s")
-    st.markdown(answer)
+        st.caption(f"⏱️ {result.latency:.2f}s")
+    st.markdown(result.answer)
 
-    if metadata:
+    # LangGraph agent metadata
+    if result.metadata:
         with st.expander("🧠 Agent details", expanded=False):
-            quality = metadata.get("quality_score")
-            iterations = metadata.get("iterations")
+            quality = result.metadata.get("quality_score")
+            iterations = result.metadata.get("iterations")
             if quality is not None:
                 st.write(f"Quality score: {quality}/10")
             if iterations is not None:
                 st.write(f"Iterations: {iterations}")
 
-            sub_questions = metadata.get("sub_questions") or []
+            sub_questions = result.metadata.get("sub_questions") or []
             if sub_questions:
                 st.markdown("**Planned sub-questions**")
                 for item in sub_questions:
                     st.markdown(f"- {item}")
 
-            critique = metadata.get("critique")
+            critique = result.metadata.get("critique")
             if critique:
                 st.markdown("**Critique**")
                 st.code(critique)
 
-    if show_sources and sources:
-        with st.expander(f"📎 Sources ({len(sources)} chunks)", expanded=False):
-            for s in sources:
-                score_str = f" — Score: {s['score']}" if s.get("score") is not None else ""
-                css = f"source-card {card_map.get(pipe_name, '')}"
+    if show_sources and result.sources:
+        card_css = CARD_MAP.get(pipe_name, "")
+        with st.expander(f"📎 Sources ({result.num_chunks} chunks)", expanded=False):
+            for s in result.sources:
+                score_str = f" — Score: {s.score}" if s.score is not None else ""
+                css = f"source-card {card_css}"
                 st.markdown(
-                    f'<div class="{css}"><strong>{s["file"]}</strong> — Page {s["page"]}{score_str}</div>',
+                    f'<div class="{css}"><strong>{s.file}</strong> — Page {s.page}{score_str}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -393,8 +383,8 @@ def run_explorer_mode():
                 with col:
                     with st.spinner(f"{name}..."):
                         try:
-                            ans, src, lat, meta = fn(query, task_type, top_k)
-                            display_result(name, ans, src, lat, show_sources, show_timing, meta)
+                            result = fn(query, task_type, top_k)
+                            display_result(name, result, show_sources, show_timing)
                         except Exception as e:
                             st.error(f"{name} error: {e}")
         else:
@@ -405,8 +395,8 @@ def run_explorer_mode():
             }
             with st.spinner(f"Running {pipeline_choice}..."):
                 try:
-                    ans, src, lat, meta = pipe_fn[pipeline_choice](query, task_type, top_k)
-                    display_result(pipeline_choice, ans, src, lat, show_sources, show_timing, meta)
+                    result = pipe_fn[pipeline_choice](query, task_type, top_k)
+                    display_result(pipeline_choice, result, show_sources, show_timing)
                 except Exception as e:
                     st.error(f"Error: {e}")
     elif run_button:

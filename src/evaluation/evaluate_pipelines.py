@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 matplotlib.use("Agg")
 
 from src.core.llm import call_llm
+from src.core.types import PipelineResult
 from src.config import EVAL_OUTPUT_DIR, TOP_K
 
 # ── Test queries ────────────────────────────────────────────────
@@ -80,67 +81,36 @@ def judge_agreement(answer_a, answer_b):
         return {"agreement": 0, "note": "Parse error"}
 
 
-# ── Pipeline runners ────────────────────────────────────────────
+# ── Pipeline runners — all return PipelineResult ────────────────
 
-def run_manual(query):
+def run_manual(query) -> PipelineResult:
     from src.pipelines.manual_pipeline import build_manual_pipeline, answer_question
     df_chunks, embeddings = build_manual_pipeline()
 
     t0 = time.time()
-    answer, retrieved = answer_question(query, df_chunks, embeddings, top_k=TOP_K)
-    latency = time.time() - t0
-
-    return {
-        "answer": answer, "latency": latency,
-        "avg_similarity": float(retrieved["similarity"].mean()),
-        "max_similarity": float(retrieved["similarity"].max()),
-        "num_chunks": len(retrieved),
-    }
+    result = answer_question(query, df_chunks, embeddings, top_k=TOP_K)
+    result.latency = time.time() - t0
+    return result
 
 
-def run_langgraph(query):
+def run_langgraph(query) -> PipelineResult:
     from src.pipelines.langgraph_agent import build_langgraph_pipeline, run_research_agent
     agent = build_langgraph_pipeline()
 
     t0 = time.time()
-    result = run_research_agent(
-        agent,
-        query,
-        task_type="Question Answering",
-        top_k=TOP_K,
-    )
-    latency = time.time() - t0
-
-    answer = result.get("answer") or result.get("final_answer") or ""
-    sources = result.get("sources", [])
-    scores = [s["score"] for s in sources if s.get("score") is not None]
-
-    return {
-        "answer": answer,
-        "latency": latency,
-        "avg_similarity": float(np.mean(scores)) if scores else 0,
-        "max_similarity": float(np.max(scores)) if scores else 0,
-        "num_chunks": len(sources),
-        "quality_score": result.get("quality_score", 0),
-        "iterations": result.get("iteration", 1),
-    }
+    result = run_research_agent(agent, query, task_type="Question Answering", top_k=TOP_K)
+    result.latency = time.time() - t0
+    return result
 
 
-def run_llamaindex(query):
+def run_llamaindex(query) -> PipelineResult:
     from src.pipelines.llamaindex_pipeline import build_index, answer_question
     index = build_index(force_rebuild=False)
 
     t0 = time.time()
-    answer, sources = answer_question(query, index, top_k=TOP_K)
-    latency = time.time() - t0
-
-    scores = [s["score"] for s in sources if s.get("score")]
-    return {
-        "answer": answer, "latency": latency,
-        "avg_similarity": float(np.mean(scores)) if scores else 0,
-        "max_similarity": float(np.max(scores)) if scores else 0,
-        "num_chunks": len(sources),
-    }
+    result = answer_question(query, index, top_k=TOP_K)
+    result.latency = time.time() - t0
+    return result
 
 
 PIPELINES = {"Manual": run_manual, "LangGraph": run_langgraph, "LlamaIndex": run_llamaindex}
@@ -161,11 +131,12 @@ def run_full_evaluation():
             print(f"\n  Running {pipe_name}...")
             try:
                 result = pipe_fn(query)
-                answer, latency = result["answer"], result["latency"]
+                answer = result.answer
+                latency = result.latency
             except Exception as e:
                 print(f"    [ERROR] {pipe_name}: {e}")
                 answer, latency = f"ERROR: {e}", 0
-                result = {}
+                result = PipelineResult(answer=answer)
 
             answers[pipe_name] = answer
             scores = judge_answer(query, answer)
@@ -174,11 +145,11 @@ def run_full_evaluation():
                 "query_id": qid, "query": query, "query_type": qtype,
                 "pipeline": pipe_name, "answer": answer[:500],
                 "latency_s": round(latency, 2),
-                "avg_similarity": round(result.get("avg_similarity", 0), 4),
-                "max_similarity": round(result.get("max_similarity", 0), 4),
-                "num_chunks": result.get("num_chunks", 0),
-                "quality_score": result.get("quality_score"),
-                "iterations": result.get("iterations"),
+                "avg_similarity": round(result.avg_similarity, 4),
+                "max_similarity": round(result.max_similarity, 4),
+                "num_chunks": result.num_chunks,
+                "quality_score": result.metadata.get("quality_score") if result.metadata else None,
+                "iterations": result.metadata.get("iterations") if result.metadata else None,
                 "completeness": scores.get("completeness", 0),
                 "grounding": scores.get("grounding", 0),
                 "clarity": scores.get("clarity", 0),

@@ -23,6 +23,7 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.llms.openai import OpenAI as LlamaOpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 
+from src.core.types import PipelineResult, sources_from_llamaindex
 from src.config import (
     OPENAI_API_KEY, CHAT_MODEL, EMBEDDING_MODEL, TEMPERATURE,
     LI_CHUNK_SIZE, LI_CHUNK_OVERLAP, TOP_K,
@@ -155,15 +156,17 @@ def create_retriever(index, top_k=TOP_K):
 
 # ── Task functions ──────────────────────────────────────────────
 
-def answer_question(query, index, top_k=TOP_K):
+def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
     """Grounded Q&A using LlamaIndex query engine."""
     engine = create_query_engine(index, prompt_template=QA_PROMPT, top_k=top_k)
     response = engine.query(query)
-    sources = _extract_sources(response)
-    return str(response), sources
+    return PipelineResult(
+        answer=str(response),
+        sources=sources_from_llamaindex(response),
+    )
 
 
-def extract_structured(query, index, top_k=6):
+def extract_structured(query, index, top_k=6) -> PipelineResult:
     """Structured extraction via custom prompt template."""
     engine = create_query_engine(index, prompt_template=EXTRACTION_PROMPT, top_k=top_k)
     response = engine.query(query)
@@ -176,24 +179,17 @@ def extract_structured(query, index, top_k=6):
     except (json.JSONDecodeError, TypeError):
         formatted = raw
 
-    return formatted, _extract_sources(response)
+    return PipelineResult(
+        answer=formatted,
+        sources=sources_from_llamaindex(response),
+    )
 
 
-def compare_documents(query, index, top_k=8):
+def compare_documents(query, index, top_k=8) -> PipelineResult:
     """Document comparison via custom prompt template."""
     engine = create_query_engine(index, prompt_template=COMPARISON_PROMPT, top_k=top_k)
     response = engine.query(query)
-    return str(response), _extract_sources(response)
-
-
-def _extract_sources(response) -> list[dict]:
-    """Extract source metadata from a LlamaIndex response."""
-    sources = []
-    for node in response.source_nodes:
-        meta = node.metadata
-        sources.append({
-            "file": meta.get("file_name", "unknown"),
-            "page": meta.get("page_label", "?"),
-            "score": round(node.score, 4) if node.score else None,
-        })
-    return sources
+    return PipelineResult(
+        answer=str(response),
+        sources=sources_from_llamaindex(response),
+    )
