@@ -180,64 +180,53 @@ def query_manual(query, task, top_k):
             "file": row["doc_name"], "page": row["page_number"],
             "score": round(row["similarity"], 4), "chunk_id": row["chunk_id"],
         })
-    return answer, sources, latency
+    return answer, sources, latency, None
 
 
 def query_langgraph(query, task, top_k):
     agent = load_langgraph_agent()
-    initial_state = {
-        "query": query, "sub_questions": [], "retrieved_context": "",
-        "source_table": "", "draft_answer": "", "critique": "",
-        "quality_score": 0.0, "iteration": 0, "final_answer": "",
-    }
+    from src.pipelines.langgraph_agent import run_research_agent
+
     t0 = time.time()
-    result = agent.invoke(initial_state)
+    result = run_research_agent(agent, query, task_type=task, top_k=top_k)
     latency = time.time() - t0
 
-    answer = result.get("draft_answer", "No answer generated.")
-    quality = result.get("quality_score", 0)
-    iterations = result.get("iteration", 1)
-    critique = result.get("critique", "")
-
-    meta = f"\n\n---\n**Agent Metadata:** Quality Score: {quality}/10 | Iterations: {iterations}"
-    if critique:
-        meta += f"\n\n**Critique:**\n{critique}"
-    return answer + meta, [], latency
+    answer = result.get("answer") or result.get("final_answer") or "No answer generated."
+    sources = result.get("sources", [])
+    metadata = {
+        "quality_score": result.get("quality_score"),
+        "iterations": result.get("iteration"),
+        "sub_questions": result.get("sub_questions", []),
+        "critique": result.get("critique", ""),
+    }
+    return answer, sources, latency, metadata
 
 
 def query_llamaindex(query, task, top_k):
     index = load_llamaindex_index()
     from src.pipelines.llamaindex_pipeline import (
-        create_query_engine, QA_PROMPT, EXTRACTION_PROMPT, COMPARISON_PROMPT,
+        answer_question, compare_documents, extract_structured,
     )
-    prompts = {
-        "Question Answering": QA_PROMPT,
-        "Structured Extraction": EXTRACTION_PROMPT,
-        "Document Comparison": COMPARISON_PROMPT,
-    }
-    engine = create_query_engine(index, prompt_template=prompts[task], top_k=top_k)
 
     t0 = time.time()
-    response = engine.query(query)
+    if task == "Question Answering":
+        answer, sources = answer_question(query, index, top_k=top_k)
+    elif task == "Structured Extraction":
+        answer, sources = extract_structured(query, index, top_k=top_k)
+    else:
+        answer, sources = compare_documents(query, index, top_k=top_k)
     latency = time.time() - t0
 
-    sources = []
-    for node in response.source_nodes:
-        meta = node.metadata
-        sources.append({
-            "file": meta.get("file_name", "unknown"),
-            "page": meta.get("page_label", "?"),
-            "score": round(node.score, 4) if node.score else None,
-            "chunk_id": "",
-        })
-    return str(response), sources, latency
+    for source in sources:
+        source.setdefault("chunk_id", "")
+    return answer, sources, latency, None
 
 
 # ==========================================================
 # DISPLAY HELPERS
 # ==========================================================
 
-def display_result(pipe_name, answer, sources, latency, show_sources, show_timing):
+def display_result(pipe_name, answer, sources, latency, show_sources, show_timing, metadata=None):
     badge_map = {
         "Manual Pipeline": "badge-manual", "LangGraph Agent": "badge-langgraph",
         "LlamaIndex": "badge-llamaindex",
@@ -252,10 +241,30 @@ def display_result(pipe_name, answer, sources, latency, show_sources, show_timin
         st.caption(f"⏱️ {latency:.2f}s")
     st.markdown(answer)
 
+    if metadata:
+        with st.expander("🧠 Agent details", expanded=False):
+            quality = metadata.get("quality_score")
+            iterations = metadata.get("iterations")
+            if quality is not None:
+                st.write(f"Quality score: {quality}/10")
+            if iterations is not None:
+                st.write(f"Iterations: {iterations}")
+
+            sub_questions = metadata.get("sub_questions") or []
+            if sub_questions:
+                st.markdown("**Planned sub-questions**")
+                for item in sub_questions:
+                    st.markdown(f"- {item}")
+
+            critique = metadata.get("critique")
+            if critique:
+                st.markdown("**Critique**")
+                st.code(critique)
+
     if show_sources and sources:
         with st.expander(f"📎 Sources ({len(sources)} chunks)", expanded=False):
             for s in sources:
-                score_str = f" — Score: {s['score']}" if s.get("score") else ""
+                score_str = f" — Score: {s['score']}" if s.get("score") is not None else ""
                 css = f"source-card {card_map.get(pipe_name, '')}"
                 st.markdown(
                     f'<div class="{css}"><strong>{s["file"]}</strong> — Page {s["page"]}{score_str}</div>',
@@ -384,8 +393,8 @@ def run_explorer_mode():
                 with col:
                     with st.spinner(f"{name}..."):
                         try:
-                            ans, src, lat = fn(query, task_type, top_k)
-                            display_result(name, ans, src, lat, show_sources, show_timing)
+                            ans, src, lat, meta = fn(query, task_type, top_k)
+                            display_result(name, ans, src, lat, show_sources, show_timing, meta)
                         except Exception as e:
                             st.error(f"{name} error: {e}")
         else:
@@ -396,8 +405,8 @@ def run_explorer_mode():
             }
             with st.spinner(f"Running {pipeline_choice}..."):
                 try:
-                    ans, src, lat = pipe_fn[pipeline_choice](query, task_type, top_k)
-                    display_result(pipeline_choice, ans, src, lat, show_sources, show_timing)
+                    ans, src, lat, meta = pipe_fn[pipeline_choice](query, task_type, top_k)
+                    display_result(pipeline_choice, ans, src, lat, show_sources, show_timing, meta)
                 except Exception as e:
                     st.error(f"Error: {e}")
     elif run_button:

@@ -103,13 +103,24 @@ def run_langgraph(query):
     agent = build_langgraph_pipeline()
 
     t0 = time.time()
-    result = run_research_agent(agent, query)
+    result = run_research_agent(
+        agent,
+        query,
+        task_type="Question Answering",
+        top_k=TOP_K,
+    )
     latency = time.time() - t0
 
+    answer = result.get("answer") or result.get("final_answer") or ""
+    sources = result.get("sources", [])
+    scores = [s["score"] for s in sources if s.get("score") is not None]
+
     return {
-        "answer": result.get("draft_answer", ""),
+        "answer": answer,
         "latency": latency,
-        "avg_similarity": 0, "max_similarity": 0, "num_chunks": 0,
+        "avg_similarity": float(np.mean(scores)) if scores else 0,
+        "max_similarity": float(np.max(scores)) if scores else 0,
+        "num_chunks": len(sources),
         "quality_score": result.get("quality_score", 0),
         "iterations": result.get("iteration", 1),
     }
@@ -166,6 +177,8 @@ def run_full_evaluation():
                 "avg_similarity": round(result.get("avg_similarity", 0), 4),
                 "max_similarity": round(result.get("max_similarity", 0), 4),
                 "num_chunks": result.get("num_chunks", 0),
+                "quality_score": result.get("quality_score"),
+                "iterations": result.get("iterations"),
                 "completeness": scores.get("completeness", 0),
                 "grounding": scores.get("grounding", 0),
                 "clarity": scores.get("clarity", 0),
@@ -186,6 +199,7 @@ def run_full_evaluation():
                     "pipeline": f"AGREEMENT: {a} vs {b}",
                     "answer": "", "latency_s": 0,
                     "avg_similarity": 0, "max_similarity": 0, "num_chunks": 0,
+                    "quality_score": None, "iterations": None,
                     "completeness": 0, "grounding": 0, "clarity": 0,
                     "overall": agreement.get("agreement", 0),
                     "feedback": agreement.get("note", ""),

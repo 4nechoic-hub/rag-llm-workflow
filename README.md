@@ -1,313 +1,327 @@
-# RAG-Based LLM Workflow for Research & Technical Document Analysis
+# RAG LLM Workflow for Technical Document Analysis
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1--mini-412991?logo=openai&logoColor=white)
-![LangGraph](https://img.shields.io/badge/LangGraph-Agentic_RAG-F58518)
-![LlamaIndex](https://img.shields.io/badge/LlamaIndex-Framework_RAG-54A24B)
-![Streamlit](https://img.shields.io/badge/Streamlit-Interactive_Demo-FF4B4B?logo=streamlit&logoColor=white)
-![License](https://img.shields.io/badge/License-Portfolio_%26_Educational-grey)
+<p align="center">
+  <img src="assets/readme/hero-banner.png" alt="Hero banner for the RAG LLM Workflow project" width="100%" />
+</p>
 
-An applied AI portfolio project demonstrating **three complementary approaches** to Retrieval-Augmented Generation (RAG) for analysing research papers, technical reports, and internal documentation — plus an **interactive conversational chatbot** for multi-turn document Q&A.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/OpenAI-GPT--4.1--mini-412991?logo=openai&logoColor=white" alt="OpenAI GPT-4.1-mini" />
+  <img src="https://img.shields.io/badge/LangGraph-Agentic_RAG-F58518" alt="LangGraph" />
+  <img src="https://img.shields.io/badge/LlamaIndex-Framework_RAG-54A24B" alt="LlamaIndex" />
+  <img src="https://img.shields.io/badge/Streamlit-Interactive_Demo-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit" />
+  <img src="https://img.shields.io/badge/Focus-Retrieval%2C_Agents%2C_Evaluation-0A66C2" alt="Focus areas" />
+</p>
 
-Each implementation solves the same core problem — grounded Q&A, structured extraction, and document comparison over PDF collections — but showcases different design philosophies and engineering trade-offs. The project includes a head-to-head evaluation framework with LLM-as-judge scoring, an interactive Streamlit demo, and a detailed writeup on the design decisions behind each approach.
+<p align="center">
+  <strong>Three RAG architectures. One shared problem. One portfolio-ready demo of retrieval, orchestration, evaluation, and product thinking.</strong>
+</p>
+
+<p align="center">
+  This project compares a manual RAG pipeline, a LangGraph research agent, and a LlamaIndex pipeline on the same technical-document workflow: grounded Q&amp;A, structured extraction, and document comparison over PDF collections.
+</p>
+
+<p align="center">
+  <a href="#why-this-project-is-interesting">Why it matters</a>
+  .
+  <a href="#product-preview">Product preview</a>
+  .
+  <a href="#architecture-at-a-glance">Architecture</a>
+  .
+  <a href="#evaluation-snapshots">Evaluation</a>
+  .
+  <a href="#quick-start">Quick start</a>
+  .
+  <a href="#about-the-builder">About the builder</a>
+  .
+  <a href="docs/DESIGN_TRADEOFFS.md">Design notes</a>
+</p>
 
 ---
 
-## Table of Contents
+## Why this project is interesting
 
-- [Features](#features)
-- [Architecture Overview](#architecture-overview)
-- [Project Structure](#project-structure)
-- [The Three Pipelines](#the-three-pipelines)
-- [Document Chatbot](#document-chatbot)
-- [Evaluation Framework](#evaluation-framework)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Cost Notes](#cost-notes)
-- [Technologies](#technologies)
-- [Author](#author)
+Most RAG repos show a single stack. This one is intentionally comparative.
 
----
+The same document-analysis problem is implemented three ways so the trade-offs are easy to see:
 
-## Features
+- **Manual pipeline** for transparency and low-level control.
+- **LangGraph agent** for query decomposition and critique-driven refinement.
+- **LlamaIndex pipeline** for higher-level abstractions and maintainability.
 
-- **Three RAG implementations** — manual from-scratch, LangGraph agentic workflow, and LlamaIndex framework-based — each with different levels of abstraction and control
-- **Conversational chatbot** — multi-turn document Q&A with conversation history, follow-up support, and source citations
-- **Pipeline comparison mode** — side-by-side evaluation of all three approaches on the same query
-- **LLM-as-judge evaluation** — automated scoring across completeness, grounding, clarity, latency, and cross-pipeline agreement
-- **Interactive Streamlit UI** — two modes: chatbot for exploration and pipeline explorer for comparison
-- **Modular architecture** — shared core components (PDF loading, chunking, embedding, retrieval, LLM calls) with no code duplication
+That makes the repo useful both as a working demo and as an engineering case study in **how architecture choices change developer control, retrieval behavior, latency, maintainability, and user experience**.
+
+### What this repo demonstrates
+
+| Signal | Evidence in the repo |
+|---|---|
+| End-to-end AI engineering | PDF ingestion, chunking, embedding, retrieval, generation, evaluation, and UI |
+| Comparative system design | The same workflow is implemented with manual code, LangGraph, and LlamaIndex |
+| Product thinking | Streamlit app with a chatbot mode and side-by-side explorer |
+| Evaluation discipline | LLM-as-judge scoring, latency tracking, agreement analysis, and saved charts |
 
 ---
 
-## Architecture Overview
+## Product preview
 
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/readme/ui-chatbot-preview.png" alt="Document Chatbot interface preview" width="100%" />
+      <p><strong>Document Chatbot</strong><br/>Multi-turn Q&amp;A over a PDF collection, with source cards, conversation continuity, and fast iteration for document exploration.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/readme/ui-explorer-preview.png" alt="Pipeline Explorer interface preview" width="100%" />
+      <p><strong>Pipeline Explorer</strong><br/>Run one pipeline or compare all three side by side to highlight differences in reasoning style, latency, and retrieval behavior.</p>
+    </td>
+  </tr>
+</table>
+
+---
+
+## Replace the starter preview panels with live screenshots
+
+The two UI panels above are starter assets. Once you have your preferred PDFs loaded locally, you can replace them in place with real Streamlit captures:
+
+```bash
+python scripts/capture_readme_screenshots.py --launch-streamlit
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│                        Streamlit Web UI                           │
-│              ┌──────────────┐  ┌───────────────────┐              │
-│              │  💬 Chatbot  │  │  🔬 Pipeline       │              │
-│              │     Mode     │  │     Explorer       │              │
-│              └──────┬───────┘  └─────────┬─────────┘              │
-├─────────────────────┼────────────────────┼────────────────────────┤
-│                     │       Pipelines     │                        │
-│     ┌───────────────┼───────────┬────────┼────────┐               │
-│     │               │           │        │        │               │
-│  ┌──▼──┐     ┌──────▼──┐  ┌────▼────┐  ┌▼──────┐ │               │
-│  │Chat │     │ Manual  │  │LangGraph│  │LlamaI.│ │               │
-│  │ Bot │     │Pipeline │  │  Agent  │  │Pipeli.│ │               │
-│  └──┬──┘     └────┬────┘  └────┬────┘  └───┬───┘ │               │
-│     │             │            │            │     │               │
-├─────┼─────────────┼────────────┼────────────┼─────┼───────────────┤
-│     │         Shared Core Components        │     │               │
-│     │    ┌─────────┬──────────┬──────────┐  │     │               │
-│     └────► PDF     │ Chunker  │ Embedder ◄──┘     │               │
-│          │ Loader  │          │          │         │               │
-│          └────┬────┴─────┬───┴────┬─────┘         │               │
-│               │          │        │                │               │
-│          ┌────▼────┐ ┌───▼──────┐ │                │               │
-│          │Retriever│ │LLM Client│ │                │               │
-│          └─────────┘ └──────────┘ │                │               │
-├───────────────────────────────────┼────────────────┼───────────────┤
-│          External Services        │                │               │
-│     ┌────────────┐  ┌────────────┐│   ┌────────────┐              │
-│     │ OpenAI API │  │ PDF Files  ││   │ Disk Cache  │             │
-│     │ (GPT-4.1)  │  │ (pdfs/)    ││   │ (cache/)    │             │
-│     └────────────┘  └────────────┘│   └────────────┘              │
-└────────────────────────────────────────────────────────────────────┘
-```
 
----
+That command is designed to overwrite these two files so the README updates automatically:
 
-## Project Structure
+- `assets/readme/ui-chatbot-preview.png`
+- `assets/readme/ui-explorer-preview.png`
 
-```
-rag-llm-workflow/
-│
-├── src/                           # Source code (Python package)
-│   ├── config.py                  # Centralised configuration & constants
-│   │
-│   ├── core/                      # Shared RAG components
-│   │   ├── pdf_loader.py          #   PDF text extraction (PyMuPDF)
-│   │   ├── chunker.py             #   Character-based text chunking
-│   │   ├── embedder.py            #   OpenAI embedding with disk caching
-│   │   ├── retriever.py           #   Cosine-similarity retrieval
-│   │   └── llm.py                 #   OpenAI client & LLM call wrappers
-│   │
-│   ├── pipelines/                 # RAG pipeline implementations
-│   │   ├── manual_pipeline.py     #   From-scratch RAG (full control)
-│   │   ├── langgraph_agent.py     #   LangGraph agentic workflow
-│   │   ├── llamaindex_pipeline.py #   LlamaIndex framework-based RAG
-│   │   └── chatbot.py             #   Conversational RAG chatbot
-│   │
-│   └── evaluation/                # Evaluation framework
-│       └── evaluate_pipelines.py  #   Head-to-head pipeline comparison
-│
-├── app/
-│   └── streamlit_app.py           # Streamlit web UI (chatbot + explorer)
-│
-├── docs/
-│   └── DESIGN_TRADEOFFS.md        # Design decisions writeup
-│
-├── pdfs/                          # Your PDF documents (user-provided)
-├── cache/                         # Auto-created: embedding cache
-├── llamaindex_storage/            # Auto-created: persisted LlamaIndex index
-├── eval_results/                  # Auto-created: evaluation CSV & charts
-│
-├── requirements.txt               # Python dependencies
-├── .env                           # Your OpenAI API key (not committed)
-├── .gitignore
-└── README.md
+If you want more control over the final look, use the shot list in `docs/README_SCREENSHOT_PLAYBOOK.md` and then polish raw captures with:
+
+```bash
+python scripts/frame_readme_screenshots.py \
+  --chatbot-input raw/chatbot.png \
+  --explorer-input raw/explorer.png
 ```
 
 ---
 
-## The Three Pipelines
+## What it does
 
-### 1. Manual Pipeline — Full Control
+- Answers questions over a folder of PDFs using retrieved evidence.
+- Extracts structured information from technical documents.
+- Compares multiple papers or reports side by side.
+- Supports multi-turn document chat with source citations.
+- Benchmarks all three pipelines on the same evaluation set.
 
-A from-scratch implementation where every RAG stage is explicit.
+### Core tasks supported
 
+| Task | Example |
+|---|---|
+| Grounded Q&amp;A | *What measurement techniques were used?* |
+| Structured extraction | *Extract the objective, methods, datasets, and findings.* |
+| Document comparison | *Compare the experimental approaches used across the papers.* |
+| Conversational follow-up | *Can you go into more detail on the PIV setup?* |
+
+---
+
+## Architecture at a glance
+
+```mermaid
+flowchart TB
+    subgraph UI[Streamlit application]
+        chat[Document Chatbot]
+        explore[Pipeline Explorer]
+    end
+
+    subgraph Pipelines[Pipeline layer]
+        manual[Manual RAG pipeline]
+        langgraph[LangGraph research agent]
+        llama[LlamaIndex pipeline]
+    end
+
+    subgraph Core[Shared core components]
+        pdf[PDF loader]
+        chunk[Chunker]
+        embed[Embedder]
+        retrieve[Retriever]
+        llm[LLM client]
+    end
+
+    subgraph Storage[External services and state]
+        docs[PDF corpus]
+        openai[OpenAI API]
+        cache[Embedding cache]
+        li[LlamaIndex storage]
+    end
+
+    chat --> manual
+    explore --> manual
+    explore --> langgraph
+    explore --> llama
+
+    manual --> pdf --> docs
+    manual --> chunk
+    manual --> embed --> openai
+    manual --> retrieve
+    manual --> llm --> openai
+
+    langgraph --> pdf
+    langgraph --> chunk
+    langgraph --> embed
+    langgraph --> retrieve
+    langgraph --> llm
+
+    llama --> docs
+    llama --> openai
+    llama --> li
 ```
-PDFs → PyMuPDF extraction → Character-based chunking (1200 chars, 200 overlap)
-     → OpenAI embedding (text-embedding-3-small) → Cosine similarity retrieval
-     → Grounded LLM response (gpt-4.1-mini)
-```
 
-**Strengths:** Full transparency over every pipeline stage. When retrieval is poor, you know exactly where to look — chunk size, embedding quality, or prompt design. No framework abstractions to debug through.
+### Canonical project path
 
-**Best for:** Prototyping, learning, custom pipeline stages, and debugging.
+For a quick, high-signal tour of the repo, start here:
 
-### 2. LangGraph Agent — Agentic Reasoning
+1. `app/streamlit_app.py` - user-facing demo.
+2. `src/pipelines/` - the three implementations.
+3. `src/core/` - reusable RAG building blocks.
+4. `src/evaluation/evaluate_pipelines.py` - comparison harness.
+5. `docs/DESIGN_TRADEOFFS.md` - rationale behind the architecture choices.
 
-A multi-step workflow with query decomposition and self-correction.
+---
 
-```
-START → PLAN (decompose query into sub-questions)
-      → RETRIEVE (embedding search per sub-question, deduplicate)
-      → SYNTHESISE (grounded answer with inline citations)
-      → CRITIQUE (score completeness, grounding, clarity)
-      → ROUTE: score < 7/10 → back to RETRIEVE (max 3 loops)
-              score ≥ 7/10 → FINALISE → END
-```
+## Three implementation strategies
 
-**Strengths:** Query decomposition dramatically improves retrieval coverage for complex, multi-part questions. Self-critique loop catches incomplete or poorly grounded answers. Implements the generate-evaluate-refine pattern.
+| Pipeline | Core idea | Strengths | Trade-offs | Best fit |
+|---|---|---|---|---|
+| **Manual** | Build the full retrieval pipeline from first principles | Maximum transparency, explicit prompts, easy debugging of each stage | More boilerplate, simpler chunking/indexing | Learning, prototyping, custom behavior |
+| **LangGraph** | Use a graph-based agent to plan, retrieve, synthesize, and critique | Better coverage for multi-part questions, explicit orchestration, agent traceability | More moving parts and higher latency/cost | Complex questions, research workflows, agentic RAG |
+| **LlamaIndex** | Use a mature framework for ingestion, indexing, and querying | Less code, sentence-aware chunking, built-in persistence | Less low-level control | Maintainable production-style RAG |
 
-**Best for:** Complex research queries, document comparison, and cases where retrieval coverage matters more than speed.
-
-### 3. LlamaIndex Pipeline — Framework Efficiency
-
-A framework-based approach using LlamaIndex's high-level abstractions.
-
-```
-PDFs → SimpleDirectoryReader → SentenceSplitter (sentence-aware chunking)
-     → OpenAIEmbedding → VectorStoreIndex → QueryEngine + custom prompts
-```
-
-**Strengths:** Minimal boilerplate (~350 lines vs ~500 for manual). Sentence-aware chunking respects natural language boundaries. Built-in index persistence. Swappable components — change LLM, embedding model, or vector store with one line.
-
-**Best for:** Production RAG, team environments, and when maintainability and component swappability are priorities.
-
-### Comparison Matrix
+### Comparison matrix
 
 | Aspect | Manual | LangGraph | LlamaIndex |
 |---|---|---|---|
-| Abstraction level | Low (full control) | Medium (graph nodes) | High (framework) |
-| Chunking | Character-based | Character-based | Sentence-aware |
-| Retrieval | Single query | Multi-query (plan) | Single query |
-| Self-correction | No | Yes (critique loop) | No |
-| Index persistence | Pickle cache | Pickle cache | Built-in storage |
-| Best for | Learning / custom | Agentic workflows | Production RAG |
+| Abstraction level | Low | Medium | High |
+| Retrieval pattern | Single-query retrieval | Multi-step, query decomposition | Framework-managed retrieval |
+| Chunking style | Character-based | Character-based | Sentence-aware |
+| Self-correction loop | No | Yes | No |
+| Index persistence | Cache-based | Cache-based | Built-in storage |
+| Main value | Control | Coverage and orchestration | Maintainability |
 
 ---
 
-## Document Chatbot
+## Interactive demo
 
-The chatbot provides a **conversational interface** for multi-turn document Q&A:
+The Streamlit app is the fastest way to understand the project.
 
-- **Follow-up questions** — maintains conversation history so you can drill into topics naturally (e.g. "What methods were used?" → "Can you elaborate on the PIV setup?")
-- **Context-aware retrieval** — each message triggers a fresh retrieval pass, but the LLM sees the full conversation for continuity
-- **Source citations** — every response includes expandable source cards with document names, page numbers, and similarity scores
-- **Token management** — automatically trims old history to stay within context limits
-- **Clear & reset** — one-click conversation reset
+| Mode | What you can do | What it demonstrates |
+|---|---|---|
+| **Document Chatbot** | Ask follow-up questions over your PDF set | Conversational retrieval, source grounding, session-aware UX |
+| **Pipeline Explorer** | Run one pipeline or compare all three side by side | Architectural trade-offs in quality, latency, and response style |
 
----
-
-## Evaluation Framework
-
-The evaluation runs all three pipelines head-to-head on a standardised query set:
-
-| Metric | Description |
-|---|---|
-| Completeness (0-10) | Does the answer address all parts of the question? |
-| Grounding (0-10) | Is every claim supported by retrieved context? |
-| Clarity (0-10) | Is it well-structured and easy to follow? |
-| Latency | Wall-clock time per query |
-| Cross-pipeline agreement | Do the three pipelines converge on similar answers? |
-
-**Outputs:**
-- `eval_results/evaluation_results.csv` — detailed per-query scores
-- Six comparison charts: overall quality, quality breakdown, latency, per-query scores, agreement, and radar profile
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- An [OpenAI API key](https://platform.openai.com/api-keys) with billing enabled
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/4nechoic-hub/rag-llm-workflow.git
-cd rag-llm-workflow
-
-# Create a virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate        # macOS / Linux
-venv\Scripts\activate           # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Configuration
-
-Create a `.env` file in the project root:
-
-```
-OPENAI_API_KEY=sk-your_api_key_here
-```
-
-### Add Your Documents
-
-Place PDF files in the `pdfs/` directory:
-
-```
-rag-llm-workflow/
-├── pdfs/
-│   ├── paper1.pdf
-│   ├── paper2.pdf
-│   └── ...
-```
-
----
-
-## Usage
-
-### Interactive Demo (Streamlit)
+Run the app locally:
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-Opens at `http://localhost:8501` with two modes:
+---
 
-- **💬 Document Chatbot** — conversational Q&A with follow-up support
-- **🔬 Pipeline Explorer** — single pipeline or side-by-side comparison
+## Evaluation snapshots
 
-### Run Pipelines Directly
+The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, and agreement trends.
 
-```python
-# Manual Pipeline
-from src.pipelines.manual_pipeline import build_manual_pipeline, answer_question
+| Overall quality | Latency |
+|---|---|
+| ![Overall quality comparison](eval_results/01_overall_quality.png) | ![Latency comparison](eval_results/03_latency.png) |
 
-df_chunks, embeddings = build_manual_pipeline()
-answer, sources = answer_question("What methods were used?", df_chunks, embeddings)
-print(answer)
+<details>
+<summary>More evaluation charts</summary>
 
-# LangGraph Agent
-from src.pipelines.langgraph_agent import build_langgraph_pipeline, run_research_agent
+| Agreement | Radar profile |
+|---|---|
+| ![Agreement comparison](eval_results/05_agreement.png) | ![Radar comparison](eval_results/06_radar.png) |
 
-agent = build_langgraph_pipeline()
-result = run_research_agent(agent, "Compare the experimental approaches.")
-print(result["final_answer"])
+</details>
 
-# LlamaIndex Pipeline
-from src.pipelines.llamaindex_pipeline import build_index, answer_question
+### Metrics used
 
-index = build_index()
-answer, sources = answer_question("Summarise the methodology.", index)
-print(answer)
+| Metric | What it measures |
+|---|---|
+| Completeness | Does the answer address the full question? |
+| Grounding | Are claims supported by retrieved evidence? |
+| Clarity | Is the answer well-structured and readable? |
+| Latency | How long does each pipeline take to respond? |
+| Cross-pipeline agreement | Do the pipelines converge on similar conclusions? |
 
-# Chatbot
-from src.pipelines.chatbot import RAGChatbot
-from src.pipelines.manual_pipeline import build_manual_pipeline
+Run the evaluator:
 
-df_chunks, embeddings = build_manual_pipeline()
-bot = RAGChatbot(df_chunks, embeddings)
-
-response, sources = bot.chat("What measurement techniques were used?")
-print(response)
-
-response, sources = bot.chat("Can you go into more detail on the PIV setup?")
-print(response)
+```bash
+python -m src.evaluation.evaluate_pipelines
 ```
 
-### Run Evaluation
+Outputs are written to:
+
+- `eval_results/evaluation_results.csv`
+- `eval_results/01_overall_quality.png`
+- `eval_results/02_quality_breakdown.png`
+- `eval_results/03_latency.png`
+- `eval_results/04_per_query.png`
+- `eval_results/05_agreement.png`
+- `eval_results/06_radar.png`
+
+---
+
+## Quick start
+
+### 1) Clone and install
+
+```bash
+git clone https://github.com/4nechoic-hub/rag-llm-workflow.git
+cd rag-llm-workflow
+
+python -m venv venv
+```
+
+Activate the environment:
+
+```bash
+# macOS / Linux
+source venv/bin/activate
+
+# Windows PowerShell
+venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2) Configure the API key
+
+Create a `.env` file in the project root:
+
+```bash
+OPENAI_API_KEY=sk-your_api_key_here
+```
+
+### 3) Add documents
+
+Place PDF files in `pdfs/`:
+
+```text
+rag-llm-workflow/
+└── pdfs/
+    ├── paper1.pdf
+    ├── paper2.pdf
+    └── ...
+```
+
+### 4) Launch the demo
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+### 5) Run the evaluation suite
 
 ```bash
 python -m src.evaluation.evaluate_pipelines
@@ -315,48 +329,185 @@ python -m src.evaluation.evaluate_pipelines
 
 ---
 
-## Cost Notes
+## Repository guide
 
-This project uses the OpenAI API. Approximate costs per run:
+<details>
+<summary>Show project structure</summary>
 
-| Operation | Approximate Cost |
-|---|---|
-| Embedding 66 chunks | ~$0.001 (text-embedding-3-small) |
-| Single Q&A query | ~$0.002 (gpt-4.1-mini) |
-| LangGraph full run | ~$0.01–0.03 (multiple LLM calls) |
-| Full evaluation | ~$0.10–0.20 (5 queries × 3 pipelines + judge) |
-| Chatbot turn | ~$0.002–0.005 per message |
+```text
+rag-llm-workflow/
+├── app/
+│   └── streamlit_app.py
+├── assets/
+│   └── readme/
+│       ├── hero-banner.png
+│       ├── ui-chatbot-preview.png
+│       └── ui-explorer-preview.png
+├── docs/
+│   ├── DESIGN_TRADEOFFS.md
+│   └── README_SCREENSHOT_PLAYBOOK.md
+├── eval_results/
+├── pdfs/
+├── scripts/
+│   ├── capture_readme_screenshots.py
+│   └── frame_readme_screenshots.py
+├── src/
+│   ├── config.py
+│   ├── core/
+│   │   ├── chunker.py
+│   │   ├── embedder.py
+│   │   ├── llm.py
+│   │   ├── pdf_loader.py
+│   │   └── retriever.py
+│   ├── evaluation/
+│   │   └── evaluate_pipelines.py
+│   └── pipelines/
+│       ├── chatbot.py
+│       ├── langgraph_agent.py
+│       ├── llamaindex_pipeline.py
+│       └── manual_pipeline.py
+├── cache/
+├── llamaindex_storage/
+├── requirements.txt
+└── README.md
+```
 
-Embeddings are cached after the first run, so subsequent queries only incur LLM generation costs. A **$5 credit** is more than sufficient for extensive testing.
+</details>
 
 ---
 
-## Technologies
+## Running the pipelines directly
+
+<details>
+<summary>Python examples</summary>
+
+```python
+# Manual pipeline
+from src.pipelines.manual_pipeline import build_manual_pipeline, answer_question
+
+df_chunks, embeddings = build_manual_pipeline()
+answer, sources = answer_question("What methods were used?", df_chunks, embeddings)
+print(answer)
+```
+
+```python
+# LangGraph research agent
+from src.pipelines.langgraph_agent import build_langgraph_pipeline, run_research_agent
+
+agent = build_langgraph_pipeline()
+result = run_research_agent(
+    agent,
+    query="Compare the experimental approaches used across the papers.",
+    task_type="Document Comparison",
+    top_k=5,
+)
+print(result["answer"])
+print(result["sources"])
+```
+
+```python
+# LlamaIndex pipeline
+from src.pipelines.llamaindex_pipeline import build_index, answer_question
+
+index = build_index()
+answer, sources = answer_question("Summarise the methodology.", index)
+print(answer)
+```
+
+```python
+# Chatbot
+from src.pipelines.chatbot import RAGChatbot
+from src.pipelines.manual_pipeline import build_manual_pipeline
+
+df_chunks, embeddings = build_manual_pipeline()
+bot = RAGChatbot(df_chunks, embeddings)
+response, sources = bot.chat("What measurement techniques were used?")
+print(response)
+```
+
+</details>
+
+---
+
+## Tech stack
 
 | Category | Tools |
 |---|---|
 | Language | Python 3.10+ |
-| LLM & Embeddings | OpenAI API (gpt-4.1-mini, text-embedding-3-small) |
-| Agentic Framework | LangGraph (StateGraph, conditional edges, stateful orchestration) |
-| RAG Framework | LlamaIndex (VectorStoreIndex, SimpleDirectoryReader, PromptTemplate) |
-| Web UI | Streamlit (interactive app with chat interface) |
-| PDF Processing | PyMuPDF (text extraction) |
-| ML / Retrieval | scikit-learn (cosine similarity), NumPy |
-| Data Processing | pandas |
-| Visualisation | Matplotlib (evaluation charts) |
+| Models | OpenAI `gpt-4.1-mini`, `text-embedding-3-small` |
+| Agent framework | LangGraph |
+| RAG framework | LlamaIndex |
+| UI | Streamlit |
+| PDF processing | PyMuPDF |
+| Retrieval math | NumPy, scikit-learn |
+| Data handling | pandas |
+| Visualisation | Matplotlib |
+
+---
+
+## Design notes
+
+The deeper architectural rationale is documented in [`docs/DESIGN_TRADEOFFS.md`](docs/DESIGN_TRADEOFFS.md).
+
+That write-up focuses on the question behind the project:
+
+> What is the right level of abstraction for a technical RAG system?
+
+This repo answers that question by implementing the same workflow three ways and comparing the engineering consequences of each choice.
+
+---
+
+## About the builder
+
+### About me
+
+I am **Tingyi Zhang**, a Postdoctoral Research Associate at **UNSW Sydney** focused on applied AI, retrieval workflows, and research-facing product development.
+
+My work sits at the intersection of **LLM systems, technical document understanding, evaluation, and usable interfaces**. I like building projects that are rigorous enough for research conversations and polished enough for real users to explore.
+
+### What I built
+
+This repository is a comparative **RAG system for technical PDFs**.
+
+Instead of implementing one happy-path stack, I built the same core workflow three different ways:
+
+- a **manual pipeline** to show the low-level mechanics clearly
+- a **LangGraph agent** to test decomposition, critique, and iterative refinement
+- a **LlamaIndex pipeline** to evaluate what a higher-level framework buys you in speed and maintainability
+
+I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** to compare answer quality, grounding, latency, and agreement.
+
+### What this project says about how I work
+
+For hiring managers, this project is meant to reflect the way I approach AI engineering work:
+
+- I like to understand the **first principles** before hiding them behind abstractions.
+- I care about **trade-offs**, not just whether something works once.
+- I try to build with both **system design** and **user experience** in mind.
+- I document **why** decisions were made, not only **what** was built.
+- I value projects that are useful as both a **working prototype** and a **clear technical artifact**.
+
+### What I would improve next
+
+If I continued this project, the next steps I would prioritise are:
+
+- unifying the pipeline contracts so all three backends expose the same runtime interface
+- improving cache invalidation with corpus-aware fingerprints
+- adding stronger conversational retrieval for follow-up questions
+- extending evaluation with citation accuracy and hallucination-focused checks
+- deploying a polished public demo with curated sample PDFs and production-quality screenshots
 
 ---
 
 ## Author
 
-**Tingyi Zhang**
-Postdoctoral Research Associate, UNSW Sydney
-
-- GitHub: [github.com/4nechoic-hub](https://github.com/4nechoic-hub)
-- LinkedIn: [linkedin.com/in/tingyi-zhang-au](https://www.linkedin.com/in/tingyi-zhang-au/)
+**Tingyi Zhang**  
+Postdoctoral Research Associate, UNSW Sydney  
+GitHub: [4nechoic-hub](https://github.com/4nechoic-hub)  
+LinkedIn: [tingyi-zhang-au](https://www.linkedin.com/in/tingyi-zhang-au/)
 
 ---
 
 ## License
 
-This project is released for portfolio and educational purposes.
+Released for portfolio and educational use.
