@@ -55,8 +55,9 @@ That makes the repo useful both as a working demo and as an engineering case stu
 
 | Signal | Evidence in the repo |
 |---|---|
-| End-to-end AI engineering | PDF ingestion, chunking, embedding, retrieval, generation, evaluation, and UI |
+| End-to-end AI engineering | PDF ingestion, chunking, embedding, retrieval, reranking, generation, evaluation, and UI |
 | Comparative system design | The same workflow is implemented with manual code, LangGraph, and LlamaIndex |
+| Retrieval quality | Two-stage retrieval: cosine similarity for recall, CrossEncoder reranking for precision |
 | Product thinking | Streamlit app with a chatbot mode and side-by-side explorer |
 | Evaluation discipline | LLM-as-judge scoring, latency tracking, agreement analysis, and saved charts |
 
@@ -141,6 +142,7 @@ flowchart TB
         chunk[Chunker]
         embed[Embedder]
         retrieve[Retriever]
+        rerank[CrossEncoder reranker]
         llm[LLM client]
     end
 
@@ -159,7 +161,7 @@ flowchart TB
     manual --> pdf --> docs
     manual --> chunk
     manual --> embed --> openai
-    manual --> retrieve
+    manual --> retrieve --> rerank
     manual --> llm --> openai
 
     langgraph --> pdf
@@ -199,6 +201,7 @@ For a quick, high-signal tour of the repo, start here:
 |---|---|---|---|
 | Abstraction level | Low | Medium | High |
 | Retrieval pattern | Single-query retrieval | Multi-step, query decomposition | Framework-managed retrieval |
+| Reranking | CrossEncoder (shared core) | CrossEncoder (shared core) | CrossEncoder (shared core) |
 | Chunking style | Character-based | Character-based | Sentence-aware |
 | Self-correction loop | No | Yes | No |
 | Index persistence | Cache-based | Cache-based | Built-in storage |
@@ -358,7 +361,8 @@ rag-llm-workflow/
 │   │   ├── embedder.py
 │   │   ├── llm.py
 │   │   ├── pdf_loader.py
-│   │   └── retriever.py
+│   │   ├── retriever.py
+│   │   └── types.py
 │   ├── evaluation/
 │   │   └── evaluate_pipelines.py
 │   └── pipelines/
@@ -386,8 +390,9 @@ rag-llm-workflow/
 from src.pipelines.manual_pipeline import build_manual_pipeline, answer_question
 
 df_chunks, embeddings = build_manual_pipeline()
-answer, sources = answer_question("What methods were used?", df_chunks, embeddings)
-print(answer)
+result = answer_question("What methods were used?", df_chunks, embeddings)
+print(result.answer)
+print(result.source_dicts)
 ```
 
 ```python
@@ -401,8 +406,8 @@ result = run_research_agent(
     task_type="Document Comparison",
     top_k=5,
 )
-print(result["answer"])
-print(result["sources"])
+print(result.answer)
+print(result.metadata)  # quality_score, iterations, sub_questions, critique
 ```
 
 ```python
@@ -410,8 +415,8 @@ print(result["sources"])
 from src.pipelines.llamaindex_pipeline import build_index, answer_question
 
 index = build_index()
-answer, sources = answer_question("Summarise the methodology.", index)
-print(answer)
+result = answer_question("Summarise the methodology.", index)
+print(result.answer)
 ```
 
 ```python
@@ -435,6 +440,7 @@ print(response)
 |---|---|
 | Language | Python 3.10+ |
 | Models | OpenAI `gpt-4.1-mini`, `text-embedding-3-small` |
+| Reranking | CrossEncoder `ms-marco-MiniLM-L-6-v2` (sentence-transformers) |
 | Agent framework | LangGraph |
 | RAG framework | LlamaIndex |
 | UI | Streamlit |
@@ -477,6 +483,8 @@ Instead of implementing one happy-path stack, I built the same core workflow thr
 
 I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** to compare answer quality, grounding, latency, and agreement.
 
+All three pipelines share a **unified `PipelineResult` contract** and a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit every backend automatically.
+
 ### What this project says about how I work
 
 For hiring managers, this project is meant to reflect the way I approach AI engineering work:
@@ -491,11 +499,11 @@ For hiring managers, this project is meant to reflect the way I approach AI engi
 
 If I continued this project, the next steps I would prioritise are:
 
-- unifying the pipeline contracts so all three backends expose the same runtime interface
-- improving cache invalidation with corpus-aware fingerprints
+- adding citation accuracy and hallucination-focused evaluation metrics
 - adding stronger conversational retrieval for follow-up questions
-- extending evaluation with citation accuracy and hallucination-focused checks
+- expanding the evaluation query set with edge cases and unanswerable questions
 - deploying a polished public demo with curated sample PDFs and production-quality screenshots
+- adding token usage tracking for cost comparison across pipelines
 
 ---
 
