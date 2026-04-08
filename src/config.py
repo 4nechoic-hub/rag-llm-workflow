@@ -2,10 +2,8 @@
 """
 Centralised configuration for all RAG pipeline components.
 Loads environment variables and defines shared constants.
-
 Author: Tingyi Zhang
 """
-
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -30,6 +28,11 @@ LI_CHUNK_OVERLAP = 200
 
 # ── Retrieval ──
 TOP_K = 5
+
+# ── Reranking ──
+RERANK_ENABLED = True
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANK_CANDIDATES = 15     # retrieve this many candidates before reranking down to TOP_K
 
 # ── LangGraph agent ──
 QUALITY_THRESHOLD = 7      # critique score threshold (out of 10)
