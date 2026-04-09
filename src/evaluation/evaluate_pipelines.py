@@ -32,11 +32,29 @@ from src.config import EVAL_OUTPUT_DIR, TOP_K
 # ── Test queries ────────────────────────────────────────────────
 
 TEST_QUERIES = [
-    {"id": "Q1", "query": "What experimental setup and measurement techniques were used?", "type": "factual"},
-    {"id": "Q2", "query": "What are the main findings and conclusions of this research?", "type": "summary"},
-    {"id": "Q3", "query": "Describe the data acquisition and signal processing methodology.", "type": "technical"},
-    {"id": "Q4", "query": "What calibration procedures were applied to the instruments?", "type": "factual"},
-    {"id": "Q5", "query": "What are the limitations or sources of uncertainty in this study?", "type": "critical"},
+    # ── Factual retrieval ───────────────────────────────────────
+    {"id": "Q01", "query": "What experimental setup and measurement techniques were used?", "type": "factual"},
+    {"id": "Q02", "query": "What calibration procedures were applied to the instruments?", "type": "factual"},
+    {"id": "Q03", "query": "What Reynolds numbers or flow conditions were tested?", "type": "factual"},
+
+    # ── Summary / synthesis ─────────────────────────────────────
+    {"id": "Q04", "query": "What are the main findings and conclusions of this research?", "type": "summary"},
+    {"id": "Q05", "query": "Summarise the motivation and objectives across the documents.", "type": "summary"},
+
+    # ── Technical depth ─────────────────────────────────────────
+    {"id": "Q06", "query": "Describe the data acquisition and signal processing methodology.", "type": "technical"},
+    {"id": "Q07", "query": "How were noise sources identified and separated from background interference?", "type": "technical"},
+
+    # ── Multi-document comparison ───────────────────────────────
+    {"id": "Q08", "query": "Compare the experimental approaches used across the papers.", "type": "comparison"},
+    {"id": "Q09", "query": "What are the key differences in instrumentation between the studies?", "type": "comparison"},
+
+    # ── Critical evaluation ─────────────────────────────────────
+    {"id": "Q10", "query": "What are the limitations or sources of uncertainty in this study?", "type": "critical"},
+    {"id": "Q11", "query": "Do the authors acknowledge any gaps in their methodology or results?", "type": "critical"},
+
+    # ── Unanswerable (tests grounding — should refuse) ──────────
+    {"id": "Q12", "query": "What machine learning models were used for predictive analytics?", "type": "unanswerable"},
 ]
 
 COLOURS = {"Manual": "#4C78A8", "LangGraph": "#F58518", "LlamaIndex": "#54A24B"}
