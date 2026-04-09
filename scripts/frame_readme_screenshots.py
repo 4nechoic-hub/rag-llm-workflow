@@ -122,7 +122,7 @@ class ScreenshotFramer:
         frame_draw.text((pill_x1 + 12, pill_y1 + 4), "README screenshot asset", fill=ACCENT, font=SMALL_FONT)
 
         frame.alpha_composite(image, (inner_pad, inner_pad + topbar_h))
-        canvas.alpha_composite(frame, (frame_x, frame_y), frame_mask)
+        canvas.paste(frame, (frame_x, frame_y), frame_mask)
 
         # Footer label
         footer_text = output_path.name
