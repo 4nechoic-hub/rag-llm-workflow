@@ -59,7 +59,7 @@ That makes the repo useful both as a working demo and as an engineering case stu
 | Comparative system design | The same workflow is implemented with manual code, LangGraph, and LlamaIndex |
 | Retrieval quality | Two-stage retrieval: cosine similarity for recall, CrossEncoder reranking for precision |
 | Product thinking | Streamlit app with a chatbot mode and side-by-side explorer |
-| Evaluation discipline | LLM-as-judge scoring, latency tracking, agreement analysis, and saved charts |
+| Evaluation discipline | LLM-as-judge scoring, citation accuracy, hallucination detection, latency tracking, agreement analysis, and saved charts |
 
 ---
 
@@ -228,7 +228,7 @@ streamlit run app/streamlit_app.py
 
 ## Evaluation snapshots
 
-The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, and agreement trends.
+The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, citation accuracy, hallucination rates, and agreement trends. The harness runs 12 queries across six categories (factual, summary, technical, comparison, critical, and unanswerable) through all three pipelines.
 
 | Overall quality | Latency |
 |---|---|
@@ -241,6 +241,10 @@ The repo includes an evaluation harness plus saved charts in `eval_results/` so 
 |---|---|
 | ![Agreement comparison](eval_results/05_agreement.png) | ![Radar comparison](eval_results/06_radar.png) |
 
+| Citation & hallucination detail |
+|---|
+| ![Citation and hallucination](eval_results/07_citation_hallucination.png) |
+
 </details>
 
 ### Metrics used
@@ -250,6 +254,8 @@ The repo includes an evaluation harness plus saved charts in `eval_results/` so 
 | Completeness | Does the answer address the full question? |
 | Grounding | Are claims supported by retrieved evidence? |
 | Clarity | Is the answer well-structured and readable? |
+| Citation accuracy | Do inline source references match actually retrieved chunks? |
+| Hallucination freedom | Are all factual claims supported, or are some fabricated? |
 | Latency | How long does each pipeline take to respond? |
 | Cross-pipeline agreement | Do the pipelines converge on similar conclusions? |
 
@@ -268,6 +274,7 @@ Outputs are written to:
 - `eval_results/04_per_query.png`
 - `eval_results/05_agreement.png`
 - `eval_results/06_radar.png`
+- `eval_results/07_citation_hallucination.png`
 
 ---
 
@@ -481,7 +488,7 @@ Instead of implementing one happy-path stack, I built the same core workflow thr
 - a **LangGraph agent** to test decomposition, critique, and iterative refinement
 - a **LlamaIndex pipeline** to evaluate what a higher-level framework buys you in speed and maintainability
 
-I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** to compare answer quality, grounding, latency, and agreement.
+I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 12 test queries.
 
 All three pipelines share a **unified `PipelineResult` contract** and a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit every backend automatically.
 
@@ -499,11 +506,11 @@ For hiring managers, this project is meant to reflect the way I approach AI engi
 
 If I continued this project, the next steps I would prioritise are:
 
-- adding citation accuracy and hallucination-focused evaluation metrics
 - adding stronger conversational retrieval for follow-up questions
-- expanding the evaluation query set with edge cases and unanswerable questions
-- deploying a polished public demo with curated sample PDFs and production-quality screenshots
 - adding token usage tracking for cost comparison across pipelines
+- deploying a polished public demo with curated sample PDFs and production-quality screenshots
+- adding hybrid BM25 + dense retrieval as a fourth pipeline option
+- implementing streaming responses in the Streamlit UI for better UX
 
 ---
 
