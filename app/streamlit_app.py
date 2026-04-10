@@ -67,6 +67,12 @@ st.markdown("""
 # ==========================================================
 # SIDEBAR
 # ==========================================================
+
+# Defaults so both app modes have defined settings
+top_k = 5
+show_sources = True
+show_timing = True
+show_retrieval_debug = False
 with st.sidebar:
     st.title("🔍 RAG Pipeline Demo")
     st.caption("Explore & chat with your technical documents")
@@ -106,10 +112,20 @@ with st.sidebar:
         )
         st.divider()
 
-    with st.expander("⚙️ Settings", expanded=False):
-        top_k = st.slider("Top-K chunks", 3, 10, 5)
-        show_sources = st.toggle("Show sources", value=True)
-        show_timing = st.toggle("Show latency", value=True)
+        with st.expander("⚙️ Settings", expanded=False):
+            top_k = st.slider("Top-K chunks", 3, 10, 5)
+            show_sources = st.toggle("Show sources", value=True, key="explorer_show_sources")
+            show_timing = st.toggle("Show latency", value=True, key="explorer_show_timing")
+    else:
+        with st.expander("⚙️ Chat settings", expanded=False):
+            show_sources = st.toggle("Show sources", value=True, key="chat_show_sources")
+            show_timing = st.toggle("Show latency", value=True, key="chat_show_timing")
+            show_retrieval_debug = st.toggle(
+                "Show retrieval query",
+                value=False,
+                key="chat_show_retrieval_debug",
+                help="Display the standalone query used for history-aware retrieval.",
+            )
 
     st.divider()
 
@@ -293,6 +309,22 @@ def display_chat_sources(sources):
                 )
 
 
+def display_chat_retrieval_debug(debug_info):
+    """Display the retrieval query used for the current chatbot turn."""
+    if not debug_info:
+        return
+
+    retrieval_query = debug_info.get("retrieval_query")
+    rewritten = debug_info.get("rewritten")
+    if not retrieval_query:
+        return
+
+    with st.expander("⚙️ Retrieval query", expanded=False):
+        mode = "History-aware rewrite" if rewritten else "Original user message"
+        st.write(f"Mode: {mode}")
+        st.code(retrieval_query)
+
+
 # ==========================================================
 # CHATBOT MODE
 # ==========================================================
@@ -313,6 +345,8 @@ def run_chatbot_mode():
         st.session_state.chat_messages = []
     if "chat_sources" not in st.session_state:
         st.session_state.chat_sources = {}
+    if "chat_debug" not in st.session_state:
+        st.session_state.chat_debug = {}
 
     # Clear button
     col1, col2 = st.columns([6, 1])
@@ -320,6 +354,7 @@ def run_chatbot_mode():
         if st.button("🗑️ Clear", use_container_width=True):
             st.session_state.chat_messages = []
             st.session_state.chat_sources = {}
+            st.session_state.chat_debug = {}
             # Reset the chatbot's history
             bot = load_chatbot()
             bot.clear_history()
@@ -329,9 +364,13 @@ def run_chatbot_mode():
     for i, msg in enumerate(st.session_state.chat_messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            if msg["role"] == "assistant" and show_sources:
-                sources = st.session_state.chat_sources.get(i, [])
-                display_chat_sources(sources)
+            if msg["role"] == "assistant":
+                if show_retrieval_debug:
+                    debug_info = st.session_state.chat_debug.get(i)
+                    display_chat_retrieval_debug(debug_info)
+                if show_sources:
+                    sources = st.session_state.chat_sources.get(i, [])
+                    display_chat_sources(sources)
 
     # Chat input
     if prompt := st.chat_input("Ask about your documents..."):
@@ -347,10 +386,13 @@ def run_chatbot_mode():
                 t0 = time.time()
                 response, sources = bot.chat(prompt)
                 latency = time.time() - t0
+                debug_info = bot.get_last_retrieval_debug() if hasattr(bot, "get_last_retrieval_debug") else None
 
             st.markdown(response)
             if show_timing:
                 st.caption(f"⏱️ {latency:.2f}s | Turn {bot.turn_count}")
+            if show_retrieval_debug:
+                display_chat_retrieval_debug(debug_info)
             if show_sources:
                 display_chat_sources(sources)
 
@@ -358,6 +400,7 @@ def run_chatbot_mode():
         msg_idx = len(st.session_state.chat_messages)
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
         st.session_state.chat_sources[msg_idx] = sources
+        st.session_state.chat_debug[msg_idx] = debug_info
 
 
 # ==========================================================
