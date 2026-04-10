@@ -230,7 +230,7 @@ streamlit run app/streamlit_app.py
 
 ## Evaluation snapshots
 
-The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, citation accuracy, hallucination rates, and agreement trends. The harness runs 12 queries across six categories (factual, summary, technical, comparison, critical, and unanswerable) through all three pipelines.
+The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, citation accuracy, hallucination rates, and agreement trends. The harness runs 23 queries across six categories (factual, summary, technical, comparison, critical, and unanswerable) through all three pipelines.
 
 | Overall quality | Latency |
 |---|---|
@@ -246,6 +246,10 @@ The repo includes an evaluation harness plus saved charts in `eval_results/` so 
 | Citation & hallucination detail |
 |---|
 | ![Citation and hallucination](eval_results/07_citation_hallucination.png) |
+
+| Quality by query type |
+|---|
+| ![Query type quality](eval_results/08_query_type_quality.png) |
 
 </details>
 
@@ -270,6 +274,7 @@ python -m src.evaluation.evaluate_pipelines
 Outputs are written to:
 
 - `eval_results/evaluation_results.csv`
+- `eval_results/evaluation_results.jsonl`
 - `eval_results/01_overall_quality.png`
 - `eval_results/02_quality_breakdown.png`
 - `eval_results/03_latency.png`
@@ -277,6 +282,7 @@ Outputs are written to:
 - `eval_results/05_agreement.png`
 - `eval_results/06_radar.png`
 - `eval_results/07_citation_hallucination.png`
+- `eval_results/08_query_type_quality.png`
 
 ---
 
@@ -373,6 +379,7 @@ rag-llm-workflow/
 │   │   ├── retriever.py
 │   │   └── types.py
 │   ├── evaluation/
+│   │   ├── eval_cases.jsonl
 │   │   └── evaluate_pipelines.py
 │   └── pipelines/
 │       ├── chatbot.py
@@ -490,7 +497,7 @@ Instead of implementing one happy-path stack, I built the same core workflow thr
 - a **LangGraph agent** to test decomposition, critique, and iterative refinement
 - a **LlamaIndex pipeline** to evaluate what a higher-level framework buys you in speed and maintainability
 
-I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 12 evaluation queries.
+I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 23 evaluation queries.
 
 All three pipelines share a **unified `PipelineResult` contract**. Manual and LangGraph share a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit both backends automatically. LlamaIndex deliberately uses its own framework-native retrieval path, providing a direct comparison of custom vs. framework-managed retrieval (see [`docs/DESIGN_TRADEOFFS.md`](docs/DESIGN_TRADEOFFS.md)).
 

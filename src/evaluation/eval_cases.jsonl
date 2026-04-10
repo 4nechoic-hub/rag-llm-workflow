@@ -1,0 +1,23 @@
+{"id":"Q01","query":"What experimental setup and measurement techniques were used?","type":"factual","answerable":true,"notes":"Core setup description and measurement methods."}
+{"id":"Q02","query":"What calibration procedures were applied to the instruments?","type":"factual","answerable":true,"notes":"Look for calibration or instrument validation details."}
+{"id":"Q03","query":"What Reynolds numbers, operating conditions, or flow regimes were tested?","type":"factual","answerable":true,"notes":"Tests concrete experimental conditions."}
+{"id":"Q04","query":"What sensors, probes, or diagnostic instruments were used in the experiments?","type":"factual","answerable":true,"notes":"Instrumentation inventory."}
+{"id":"Q05","query":"What datasets, samples, or test cases were examined in the documents?","type":"factual","answerable":true,"notes":"Supports source-grounded extraction of examined materials."}
+{"id":"Q06","query":"What boundary conditions or control parameters were specified for the experiments?","type":"factual","answerable":true,"notes":"Targets concrete setup parameters."}
+{"id":"Q07","query":"What are the main findings and conclusions of this research?","type":"summary","answerable":true,"notes":"High-level synthesis question."}
+{"id":"Q08","query":"Summarise the motivation and objectives across the documents.","type":"summary","answerable":true,"notes":"Cross-document overview question."}
+{"id":"Q09","query":"Give a concise high-level summary of the methodology used across the papers.","type":"summary","answerable":true,"notes":"Methodology synthesis without excessive detail."}
+{"id":"Q10","query":"Summarise the practical implications or applications discussed in the documents.","type":"summary","answerable":true,"notes":"High-level implications question."}
+{"id":"Q11","query":"Describe the data acquisition and signal processing methodology.","type":"technical","answerable":true,"notes":"Technical depth on data processing."}
+{"id":"Q12","query":"How were noise sources identified and separated from background interference?","type":"technical","answerable":true,"notes":"Detailed methodology question."}
+{"id":"Q13","query":"How did the documents quantify uncertainty, error, or measurement reliability?","type":"technical","answerable":true,"notes":"Looks for uncertainty quantification details."}
+{"id":"Q14","query":"How was repeatability, validation, or verification established in the experiments?","type":"technical","answerable":true,"notes":"Validation-focused technical question."}
+{"id":"Q15","query":"Compare the experimental approaches used across the papers.","type":"comparison","answerable":true,"notes":"Multi-document comparison of methods."}
+{"id":"Q16","query":"What are the key differences in instrumentation between the studies?","type":"comparison","answerable":true,"notes":"Focused comparison question."}
+{"id":"Q17","query":"Compare how the documents validate their methods or results.","type":"comparison","answerable":true,"notes":"Cross-document comparison of validation strategy."}
+{"id":"Q18","query":"What are the main limitations or sources of uncertainty discussed in the documents?","type":"critical","answerable":true,"notes":"Critical reading question."}
+{"id":"Q19","query":"Do the authors acknowledge any gaps in their methodology or results?","type":"critical","answerable":true,"notes":"Gap and limitation identification."}
+{"id":"Q20","query":"What trade-offs or weaknesses do the documents suggest about their chosen approaches?","type":"critical","answerable":true,"notes":"Critical synthesis question."}
+{"id":"Q21","query":"What machine learning models were used for predictive analytics?","type":"unanswerable","answerable":false,"notes":"Intentional refusal test: likely absent from the PDFs."}
+{"id":"Q22","query":"Which cloud platform was used to store and process the raw experimental data?","type":"unanswerable","answerable":false,"notes":"Intentional refusal test: infrastructure detail likely absent."}
+{"id":"Q23","query":"What was the exact funding amount in US dollars for the project?","type":"unanswerable","answerable":false,"notes":"Intentional refusal test: funding amount usually absent from technical method PDFs."}
