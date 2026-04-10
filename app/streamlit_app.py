@@ -229,8 +229,26 @@ def display_result(pipe_name, result, show_sources, show_timing):
         st.caption(f"⏱️ {result.latency:.2f}s")
     st.markdown(result.answer)
 
-    # LangGraph agent metadata
+    # Retrieval metadata for all pipelines
     if result.metadata:
+        retrieval_mode = result.metadata.get("retrieval_mode")
+        rerank_enabled = result.metadata.get("rerank_enabled")
+        chunking_style = result.metadata.get("chunking_style")
+        top_k_value = result.metadata.get("top_k")
+
+        if any(v is not None for v in [retrieval_mode, rerank_enabled, chunking_style, top_k_value]):
+            with st.expander("⚙️ Retrieval details", expanded=False):
+                if retrieval_mode:
+                    st.write(f"Retrieval mode: {retrieval_mode}")
+                if rerank_enabled is not None:
+                    st.write(f"Reranking: {'Enabled' if rerank_enabled else 'Disabled'}")
+                if chunking_style:
+                    st.write(f"Chunking style: {chunking_style}")
+                if top_k_value is not None:
+                    st.write(f"Top-k: {top_k_value}")
+
+    # LangGraph-specific metadata
+    if result.metadata and pipe_name == "LangGraph Agent":
         with st.expander("🧠 Agent details", expanded=False):
             quality = result.metadata.get("quality_score")
             iterations = result.metadata.get("iterations")

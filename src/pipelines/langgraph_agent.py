@@ -22,7 +22,7 @@ from src.core.llm import call_llm
 from src.core.pdf_loader import load_all_pdfs
 from src.core.retriever import format_context, retrieve_top_k
 from src.core.types import PipelineResult, SourceChunk
-from src.config import MAX_ITERATIONS, PDF_FOLDER, QUALITY_THRESHOLD, TOP_K
+from src.config import MAX_ITERATIONS, PDF_FOLDER, QUALITY_THRESHOLD, TOP_K, RERANK_ENABLED
 
 
 class ResearchState(TypedDict):
@@ -443,6 +443,11 @@ def run_research_agent(
         answer=state.get("answer") or state.get("final_answer") or "",
         sources=source_chunks,
         metadata={
+            "backend": "langgraph",
+            "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
+            "rerank_enabled": RERANK_ENABLED,
+            "chunking_style": "character",
+            "top_k": top_k,
             "quality_score": state.get("quality_score"),
             "iterations": state.get("iteration"),
             "sub_questions": state.get("sub_questions", []),

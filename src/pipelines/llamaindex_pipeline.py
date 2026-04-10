@@ -154,6 +154,17 @@ def create_retriever(index, top_k=TOP_K):
     return index.as_retriever(similarity_top_k=top_k)
 
 
+def _llamaindex_metadata(top_k: int) -> dict:
+    """Metadata describing the framework-native LlamaIndex retrieval path."""
+    return {
+        "backend": "llamaindex",
+        "retrieval_mode": "framework_similarity",
+        "rerank_enabled": False,
+        "chunking_style": "sentence",
+        "top_k": top_k,
+    }
+
+
 # ── Task functions ──────────────────────────────────────────────
 
 def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
@@ -163,6 +174,7 @@ def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
     return PipelineResult(
         answer=str(response),
         sources=sources_from_llamaindex(response),
+        metadata=_llamaindex_metadata(top_k),
     )
 
 
@@ -182,6 +194,7 @@ def extract_structured(query, index, top_k=6) -> PipelineResult:
     return PipelineResult(
         answer=formatted,
         sources=sources_from_llamaindex(response),
+        metadata=_llamaindex_metadata(top_k),
     )
 
 
@@ -192,4 +205,5 @@ def compare_documents(query, index, top_k=8) -> PipelineResult:
     return PipelineResult(
         answer=str(response),
         sources=sources_from_llamaindex(response),
+        metadata=_llamaindex_metadata(top_k),
     )

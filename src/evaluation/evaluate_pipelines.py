@@ -272,6 +272,12 @@ def run_full_evaluation():
             # Quality scoring
             scores = judge_answer(query, answer)
             print(f"    Quality: {scores.get('overall', '?')}/10 | Latency: {latency:.2f}s")
+            if result.metadata:
+                print(
+                    f"    Retrieval: {result.metadata.get('retrieval_mode', 'unknown')} | "
+                    f"Rerank: {result.metadata.get('rerank_enabled', 'unknown')} | "
+                    f"Chunking: {result.metadata.get('chunking_style', 'unknown')}"
+                )
 
             # Citation accuracy
             citation = judge_citation_accuracy(answer, source_dicts)
@@ -283,11 +289,16 @@ def run_full_evaluation():
 
             row = {
                 "query_id": qid, "query": query, "query_type": qtype,
-                "pipeline": pipe_name, "answer": answer[:500],
+                "pipeline": pipe_name, "answer": answer,
                 "latency_s": round(latency, 2),
                 "avg_similarity": round(result.avg_similarity, 4),
                 "max_similarity": round(result.max_similarity, 4),
                 "num_chunks": result.num_chunks,
+                "backend": result.metadata.get("backend") if result.metadata else None,
+                "retrieval_mode": result.metadata.get("retrieval_mode") if result.metadata else None,
+                "rerank_enabled": result.metadata.get("rerank_enabled") if result.metadata else None,
+                "chunking_style": result.metadata.get("chunking_style") if result.metadata else None,
+                "top_k": result.metadata.get("top_k") if result.metadata else None,
                 "quality_score": result.metadata.get("quality_score") if result.metadata else None,
                 "iterations": result.metadata.get("iterations") if result.metadata else None,
                 # Quality dimensions
@@ -323,6 +334,8 @@ def run_full_evaluation():
                     "pipeline": f"AGREEMENT: {a} vs {b}",
                     "answer": "", "latency_s": 0,
                     "avg_similarity": 0, "max_similarity": 0, "num_chunks": 0,
+                    "backend": None, "retrieval_mode": None, "rerank_enabled": None,
+                    "chunking_style": None, "top_k": None,
                     "quality_score": None, "iterations": None,
                     "completeness": 0, "grounding": 0, "clarity": 0,
                     "overall": agreement.get("agreement", 0),

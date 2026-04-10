@@ -14,7 +14,18 @@ from src.core.embedder import embed_chunks
 from src.core.retriever import retrieve_top_k, format_context
 from src.core.llm import call_llm
 from src.core.types import PipelineResult, sources_from_dataframe
-from src.config import PDF_FOLDER, TOP_K
+from src.config import PDF_FOLDER, TOP_K, RERANK_ENABLED
+
+
+def _manual_metadata(top_k: int) -> dict:
+    """Shared metadata describing the manual retrieval path."""
+    return {
+        "backend": "manual",
+        "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
+        "rerank_enabled": RERANK_ENABLED,
+        "chunking_style": "character",
+        "top_k": top_k,
+    }
 
 
 # ── Task functions ──────────────────────────────────────────────
@@ -44,6 +55,7 @@ def answer_question(query, df_chunks, embeddings, top_k=TOP_K) -> PipelineResult
     return PipelineResult(
         answer=answer,
         sources=sources_from_dataframe(retrieved),
+        metadata=_manual_metadata(top_k),
     )
 
 
@@ -72,6 +84,7 @@ def extract_structured_summary(query, df_chunks, embeddings, top_k=6) -> Pipelin
     return PipelineResult(
         answer=content,
         sources=sources_from_dataframe(retrieved),
+        metadata=_manual_metadata(top_k),
     )
 
 
@@ -102,6 +115,7 @@ def compare_documents(query, df_chunks, embeddings, top_k=8) -> PipelineResult:
     return PipelineResult(
         answer=content,
         sources=sources_from_dataframe(retrieved),
+        metadata=_manual_metadata(top_k),
     )
 
 
