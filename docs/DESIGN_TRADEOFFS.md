@@ -65,6 +65,28 @@ When you're building a RAG system that needs to be maintained, extended, or hand
 
 ---
 
+## Retrieval Strategy: Shared Two-Stage vs. Framework-Native
+
+One of the most visible architectural decisions in the project is that Manual and LangGraph share a two-stage retriever (`src/core/retriever.py`) — cosine similarity for candidate recall, followed by CrossEncoder reranking for precision — while LlamaIndex uses its own framework-managed `QueryEngine` instead.
+
+This is deliberate, not an oversight.
+
+**Why not wire LlamaIndex into the shared retriever?**
+
+LlamaIndex's value proposition is its managed abstractions. Forcing it through an external retriever would fight the framework's design — you'd be replacing the component that makes the framework worth evaluating in the first place. The whole point of including LlamaIndex is to see what a framework-native approach buys you (and what it costs you) compared to hand-built retrieval.
+
+Keeping the retrieval paths separate also makes the evaluation more informative. When the LLM-as-judge scores differ between pipelines, the difference reflects the full stack — chunking strategy, retrieval mechanism, and reranking — rather than just orchestration. That's a more honest comparison and a more useful one for deciding which approach fits a given use case.
+
+**What this means for evaluation scores:**
+
+Because LlamaIndex skips the CrossEncoder reranking stage, its retrieval precision may differ from the other two pipelines on queries where reranking would have reordered candidates significantly. The evaluation results should be read with this in mind — score differences between LlamaIndex and the other pipelines capture retrieval-path differences, not just generation differences.
+
+**Could you add CrossEncoder reranking to LlamaIndex?**
+
+Yes. LlamaIndex supports custom `NodePostprocessor` components, so you could inject a CrossEncoder reranking step into its query pipeline. That would be a reasonable next step if you wanted to isolate the effect of orchestration from retrieval. I chose not to do this because the current design answers a more practical question: *how does a framework used as-intended compare to a custom-built pipeline?*
+
+---
+
 ## What the Evaluation Revealed
 
 Running the same five test queries through all three pipelines with an LLM-as-judge produced some practical insights:
