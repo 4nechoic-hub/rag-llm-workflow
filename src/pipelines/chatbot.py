@@ -10,7 +10,7 @@ Author: Tingyi Zhang
 """
 
 from src.core.retriever import retrieve_top_k, format_context
-from src.core.llm import call_llm_chat
+from src.core.llm import call_llm, call_llm_chat
 from src.config import TOP_K
 
 # ── System prompt ───────────────────────────────────────────────
@@ -56,15 +56,44 @@ class RAGChatbot:
 
         doc_list = "\n".join(f"  - {name}" for name in doc_names)
         self.system_prompt = CHATBOT_SYSTEM_PROMPT.format(doc_list=doc_list)
+        self.last_retrieval_query = None  # stores rewritten query for debugging
+
+    def _rewrite_retrieval_query(self, user_message: str) -> str:
+        """Rewrite the user message into a standalone retrieval query using recent history."""
+        recent = self._trim_history(max_turns=3)
+        if not recent:
+            return user_message
+
+        history_block = "\n".join(
+            f"{m['role'].upper()}: {m['content']}" for m in recent
+        )
+        system = (
+            "You are a query rewriter for a document retrieval system.\n\n"
+            "Given a conversation history and a new user message, rewrite the "
+            "user message into a single standalone search query that captures "
+            "the full intent — resolve pronouns, references, and implicit context.\n\n"
+            "Return ONLY the rewritten query, nothing else."
+        )
+        user = (
+            f"Conversation history:\n{history_block}\n\n"
+            f"New user message: {user_message}\n\n"
+            "Standalone retrieval query:"
+        )
+        rewritten = call_llm(system, user).strip()
+        return rewritten or user_message
 
     def chat(self, user_message: str) -> tuple[str, list[dict]]:
         """
         Send a message and get a grounded response.
         Returns (response_text, retrieved_sources).
         """
-        # Retrieve relevant chunks
+        # Rewrite the query for better retrieval on follow-ups
+        retrieval_query = self._rewrite_retrieval_query(user_message)
+        self.last_retrieval_query = retrieval_query
+
+        # Retrieve relevant chunks using the rewritten query
         retrieved = retrieve_top_k(
-            user_message, self.df_chunks, self.embeddings, top_k=self.top_k,
+            retrieval_query, self.df_chunks, self.embeddings, top_k=self.top_k,
         )
         context = format_context(retrieved)
 
