@@ -18,6 +18,12 @@ from langgraph.graph import END, START, StateGraph
 
 from src.core.chunker import create_document_chunks
 from src.core.embedder import embed_chunks
+from src.core.extraction import (
+    EXTRACTION_MISSING_VALUE,
+    extraction_field_bullets,
+    extraction_schema_instruction,
+    validate_and_format_extraction,
+)
 from src.core.llm import call_llm
 from src.core.pdf_loader import load_all_pdfs
 from src.core.retriever import format_context, retrieve_top_k
@@ -42,6 +48,7 @@ class ResearchState(TypedDict):
     final_answer: str
 
 
+
 def _clean_json_response(raw: str) -> str:
     """Strip optional markdown fences from a model response."""
     cleaned = raw.strip()
@@ -52,6 +59,7 @@ def _clean_json_response(raw: str) -> str:
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3]
     return cleaned.strip()
+
 
 
 def _normalise_sub_questions(candidate: Any, fallback_query: str) -> List[str]:
@@ -73,6 +81,7 @@ def _normalise_sub_questions(candidate: Any, fallback_query: str) -> List[str]:
     return sub_questions or [fallback_query]
 
 
+
 def _task_planning_guidance(task_type: str) -> str:
     if task_type == "Structured Extraction":
         return (
@@ -89,13 +98,10 @@ def _task_planning_guidance(task_type: str) -> str:
     )
 
 
+
 def _task_output_instruction(task_type: str) -> str:
     if task_type == "Structured Extraction":
-        return (
-            "Return valid JSON only, with keys: title, objective, methodology, experimental_setup, "
-            "main_findings, limitations. If a field is unsupported, set it to "
-            '"Not found in retrieved context".'
-        )
+        return extraction_schema_instruction()
     if task_type == "Document Comparison":
         return (
             "Return a structured comparison with these sections: "
@@ -103,6 +109,7 @@ def _task_output_instruction(task_type: str) -> str:
             "4. Key methodological differences 5. Key findings differences 6. Source list."
         )
     return "Return: 1. Answer 2. Key supporting points 3. Source list."
+
 
 
 def _render_source_table(sources: List[dict]) -> str:
@@ -219,7 +226,9 @@ def build_research_graph(
             system_parts.append("5. If evidence is insufficient, explicitly say so.")
             system_parts.append(f"6. {_task_output_instruction(task_type)}")
         else:
-            system_parts.append("4. If evidence is insufficient, explicitly mark the missing field.")
+            system_parts.append(
+                f"4. If a field is unsupported, set it to \"{EXTRACTION_MISSING_VALUE}\"."
+            )
             system_parts.append(f"5. {_task_output_instruction(task_type)}")
 
         system = "\n".join(system_parts)
@@ -230,6 +239,9 @@ def build_research_graph(
             f"Planned sub-questions: {json.dumps(state.get('sub_questions', []), ensure_ascii=False)}",
             f"\nRetrieved evidence:\n{state.get('retrieved_context', '')}",
         ]
+
+        if task_type == "Structured Extraction":
+            user_parts.append(f"\nRequired JSON fields:\n{extraction_field_bullets()}")
 
         if state.get("iteration", 0) > 0 and state.get("critique"):
             user_parts.append(
@@ -402,6 +414,7 @@ def build_langgraph_pipeline(pdf_folder=PDF_FOLDER, force_recompute=False):
     return build_research_graph(df_chunks, embeddings)
 
 
+
 def run_research_agent(
     agent,
     query: str,
@@ -428,7 +441,6 @@ def run_research_agent(
     }
     state = agent.invoke(initial_state)
 
-    # Convert state sources (list of dicts) to SourceChunk list
     source_chunks = [
         SourceChunk(
             file=s["file"],
@@ -439,18 +451,25 @@ def run_research_agent(
         for s in state.get("sources", [])
     ]
 
+    answer_text = state.get("answer") or state.get("final_answer") or ""
+    metadata = {
+        "backend": "langgraph",
+        "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
+        "rerank_enabled": RERANK_ENABLED,
+        "chunking_style": "character",
+        "top_k": top_k,
+        "quality_score": state.get("quality_score"),
+        "iterations": state.get("iteration"),
+        "sub_questions": state.get("sub_questions", []),
+        "critique": state.get("critique", ""),
+    }
+
+    if task_type == "Structured Extraction":
+        answer_text, extraction_meta = validate_and_format_extraction(answer_text, attempt_repair=True)
+        metadata.update(extraction_meta)
+
     return PipelineResult(
-        answer=state.get("answer") or state.get("final_answer") or "",
+        answer=answer_text,
         sources=source_chunks,
-        metadata={
-            "backend": "langgraph",
-            "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
-            "rerank_enabled": RERANK_ENABLED,
-            "chunking_style": "character",
-            "top_k": top_k,
-            "quality_score": state.get("quality_score"),
-            "iterations": state.get("iteration"),
-            "sub_questions": state.get("sub_questions", []),
-            "critique": state.get("critique", ""),
-        },
+        metadata=metadata,
     )

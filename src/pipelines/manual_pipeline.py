@@ -8,6 +8,12 @@ OpenAI embedding, cosine-similarity retrieval, and grounded LLM response.
 Author: Tingyi Zhang
 """
 
+from src.core.extraction import (
+    EXTRACTION_MISSING_VALUE,
+    extraction_field_bullets,
+    extraction_schema_instruction,
+    validate_and_format_extraction,
+)
 from src.core.pdf_loader import load_all_pdfs
 from src.core.chunker import create_document_chunks
 from src.core.embedder import embed_chunks
@@ -16,6 +22,8 @@ from src.core.llm import call_llm
 from src.core.types import PipelineResult, sources_from_dataframe
 from src.config import PDF_FOLDER, TOP_K, RERANK_ENABLED
 
+
+# ── Metadata helpers ────────────────────────────────────────────
 
 def _manual_metadata(top_k: int) -> dict:
     """Shared metadata describing the manual retrieval path."""
@@ -59,8 +67,9 @@ def answer_question(query, df_chunks, embeddings, top_k=TOP_K) -> PipelineResult
     )
 
 
+
 def extract_structured_summary(query, df_chunks, embeddings, top_k=6) -> PipelineResult:
-    """Extract a structured JSON-style summary from retrieved chunks."""
+    """Extract a schema-validated structured summary from retrieved chunks."""
     retrieved = retrieve_top_k(query, df_chunks, embeddings, top_k=top_k)
     context = format_context(retrieved)
 
@@ -68,24 +77,27 @@ def extract_structured_summary(query, df_chunks, embeddings, top_k=6) -> Pipelin
         "You are a technical document extraction assistant.\n\n"
         "Rules:\n"
         "1. Use ONLY the provided context.\n"
-        "2. If a field is not supported, return \"Not found in retrieved context\".\n"
-        "3. Return valid JSON only."
+        f"2. If a field is not supported, return \"{EXTRACTION_MISSING_VALUE}\".\n"
+        f"3. {extraction_schema_instruction()}"
     )
     user_prompt = (
         "Task:\nExtract a structured summary from the retrieved context.\n\n"
-        "Requested fields:\n"
-        "- title\n- objective\n- methodology\n- experimental_setup\n"
-        "- main_findings\n- limitations\n\n"
+        "Required JSON fields:\n"
+        f"{extraction_field_bullets()}\n\n"
         f"Retrieved context:\n{context}\n\n"
         "Return JSON only."
     )
 
-    content = call_llm(system_prompt, user_prompt)
+    raw_output = call_llm(system_prompt, user_prompt)
+    content, extraction_meta = validate_and_format_extraction(raw_output, attempt_repair=True)
+    metadata = {**_manual_metadata(top_k), **extraction_meta}
+
     return PipelineResult(
         answer=content,
         sources=sources_from_dataframe(retrieved),
-        metadata=_manual_metadata(top_k),
+        metadata=metadata,
     )
+
 
 
 def compare_documents(query, df_chunks, embeddings, top_k=8) -> PipelineResult:

@@ -550,6 +550,12 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                     f"Rerank: {metadata.get('rerank_enabled', 'unknown')} | "
                     f"Chunking: {metadata.get('chunking_style', 'unknown')}"
                 )
+                if metadata.get("task_kind") == "structured_extraction":
+                    print(
+                        f"    Schema valid: {metadata.get('schema_valid')} | "
+                        f"Source: {metadata.get('schema_source')} | "
+                        f"Error: {metadata.get('schema_error_type')}"
+                    )
 
             summary_rows.append({
                 "row_type": "pipeline",
@@ -573,6 +579,13 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                 "rerank_enabled": metadata.get("rerank_enabled"),
                 "chunking_style": metadata.get("chunking_style"),
                 "top_k": metadata.get("top_k"),
+                "task_kind": metadata.get("task_kind"),
+                "schema_name": metadata.get("schema_name"),
+                "schema_valid": metadata.get("schema_valid"),
+                "schema_source": metadata.get("schema_source"),
+                "schema_error_type": metadata.get("schema_error_type"),
+                "repair_attempted": metadata.get("repair_attempted"),
+                "repair_succeeded": metadata.get("repair_succeeded"),
                 "quality_score": metadata.get("quality_score"),
                 "iterations": metadata.get("iterations"),
                 "completeness": safe_float(quality.get("completeness", 0), 0.0),
@@ -657,6 +670,13 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                     "rerank_enabled": None,
                     "chunking_style": None,
                     "top_k": None,
+                    "task_kind": None,
+                    "schema_name": None,
+                    "schema_valid": None,
+                    "schema_source": None,
+                    "schema_error_type": None,
+                    "repair_attempted": None,
+                    "repair_succeeded": None,
                     "quality_score": None,
                     "iterations": None,
                     "completeness": 0,

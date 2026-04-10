@@ -243,7 +243,12 @@ def display_result(pipe_name, result, show_sources, show_timing):
     )
     if show_timing:
         st.caption(f"⏱️ {result.latency:.2f}s")
-    st.markdown(result.answer)
+
+    is_structured_extraction = bool(result.metadata and result.metadata.get("task_kind") == "structured_extraction")
+    if is_structured_extraction:
+        st.code(result.answer, language="json")
+    else:
+        st.markdown(result.answer)
 
     # Retrieval metadata for all pipelines
     if result.metadata:
@@ -262,6 +267,34 @@ def display_result(pipe_name, result, show_sources, show_timing):
                     st.write(f"Chunking style: {chunking_style}")
                 if top_k_value is not None:
                     st.write(f"Top-k: {top_k_value}")
+
+    if result.metadata and result.metadata.get("task_kind") == "structured_extraction":
+        with st.expander("🧾 Extraction contract", expanded=False):
+            schema_name = result.metadata.get("schema_name")
+            schema_valid = result.metadata.get("schema_valid")
+            schema_source = result.metadata.get("schema_source")
+            schema_error_type = result.metadata.get("schema_error_type")
+            repair_attempted = result.metadata.get("repair_attempted")
+            repair_succeeded = result.metadata.get("repair_succeeded")
+            missing_fields = result.metadata.get("schema_missing_fields") or []
+            extra_fields = result.metadata.get("schema_extra_fields") or []
+
+            if schema_name:
+                st.write(f"Schema: {schema_name}")
+            if schema_valid is not None:
+                st.write(f"Schema valid: {'Yes' if schema_valid else 'No'}")
+            if schema_source:
+                st.write(f"Output source: {schema_source}")
+            if repair_attempted is not None:
+                st.write(f"Repair attempted: {'Yes' if repair_attempted else 'No'}")
+            if repair_succeeded is not None:
+                st.write(f"Repair succeeded: {'Yes' if repair_succeeded else 'No'}")
+            if schema_error_type:
+                st.write(f"Error type: {schema_error_type}")
+            if missing_fields:
+                st.write(f"Fields filled with fallback: {', '.join(missing_fields)}")
+            if extra_fields:
+                st.write(f"Ignored extra fields: {', '.join(map(str, extra_fields))}")
 
     # LangGraph-specific metadata
     if result.metadata and pipe_name == "LangGraph Agent":

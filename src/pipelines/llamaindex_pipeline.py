@@ -8,7 +8,6 @@ sentence-aware chunking, vector indexing, and query engines.
 Author: Tingyi Zhang
 """
 
-import json
 from pathlib import Path
 
 from llama_index.core import (
@@ -23,11 +22,23 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.llms.openai import OpenAI as LlamaOpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 
+from src.core.extraction import (
+    EXTRACTION_MISSING_VALUE,
+    extraction_field_bullets,
+    extraction_schema_instruction,
+    validate_and_format_extraction,
+)
 from src.core.types import PipelineResult, sources_from_llamaindex
 from src.config import (
-    OPENAI_API_KEY, CHAT_MODEL, EMBEDDING_MODEL, TEMPERATURE,
-    LI_CHUNK_SIZE, LI_CHUNK_OVERLAP, TOP_K,
-    PDF_FOLDER, LLAMAINDEX_STORAGE,
+    OPENAI_API_KEY,
+    CHAT_MODEL,
+    EMBEDDING_MODEL,
+    TEMPERATURE,
+    LI_CHUNK_SIZE,
+    LI_CHUNK_OVERLAP,
+    TOP_K,
+    PDF_FOLDER,
+    LLAMAINDEX_STORAGE,
 )
 
 
@@ -70,13 +81,13 @@ EXTRACTION_PROMPT = PromptTemplate(
     "You are a technical document extraction assistant.\n\n"
     "Rules:\n"
     "1. Use ONLY the provided context.\n"
-    "2. If a field is not supported, return \"Not found in retrieved context\".\n"
-    "3. Return valid JSON only, no markdown fences.\n\n"
+    f"2. If a field is not supported, return \"{EXTRACTION_MISSING_VALUE}\".\n"
+    f"3. {extraction_schema_instruction()}\n\n"
     "Context:\n{context_str}\n\n"
     "Task: {query_str}\n\n"
-    "Extract the following fields as JSON:\n"
-    "- title\n- objective\n- methodology\n- experimental_setup\n"
-    "- main_findings\n- limitations\n\nJSON:"
+    "Required JSON fields:\n"
+    f"{extraction_field_bullets()}\n\n"
+    "JSON:"
 )
 
 COMPARISON_PROMPT = PromptTemplate(
@@ -149,9 +160,11 @@ def create_query_engine(index, prompt_template=QA_PROMPT, top_k=TOP_K):
     )
 
 
+
 def create_retriever(index, top_k=TOP_K):
     """Create a standalone retriever for inspecting chunks."""
     return index.as_retriever(similarity_top_k=top_k)
+
 
 
 def _llamaindex_metadata(top_k: int) -> dict:
@@ -178,24 +191,22 @@ def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
     )
 
 
+
 def extract_structured(query, index, top_k=6) -> PipelineResult:
-    """Structured extraction via custom prompt template."""
+    """Structured extraction with shared schema validation and repair."""
     engine = create_query_engine(index, prompt_template=EXTRACTION_PROMPT, top_k=top_k)
     response = engine.query(query)
 
-    raw = str(response)
-    try:
-        cleaned = raw.strip().removeprefix("```json").removesuffix("```").strip()
-        parsed = json.loads(cleaned)
-        formatted = json.dumps(parsed, indent=2)
-    except (json.JSONDecodeError, TypeError):
-        formatted = raw
+    raw_output = str(response)
+    formatted, extraction_meta = validate_and_format_extraction(raw_output, attempt_repair=True)
+    metadata = {**_llamaindex_metadata(top_k), **extraction_meta}
 
     return PipelineResult(
         answer=formatted,
         sources=sources_from_llamaindex(response),
-        metadata=_llamaindex_metadata(top_k),
+        metadata=metadata,
     )
+
 
 
 def compare_documents(query, index, top_k=8) -> PipelineResult:
