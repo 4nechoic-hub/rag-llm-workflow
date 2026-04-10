@@ -57,7 +57,7 @@ That makes the repo useful both as a working demo and as an engineering case stu
 |---|---|
 | End-to-end AI engineering | PDF ingestion, chunking, embedding, retrieval, reranking, generation, evaluation, and UI |
 | Comparative system design | The same workflow is implemented with manual code, LangGraph, and LlamaIndex |
-| Retrieval quality | Two-stage retrieval: cosine similarity for recall, CrossEncoder reranking for precision |
+| Retrieval quality | Two-stage retrieval (cosine + CrossEncoder) for Manual and LangGraph; LlamaIndex-native retrieval for framework comparison |
 | Product thinking | Streamlit app with a chatbot mode and side-by-side explorer |
 | Evaluation discipline | LLM-as-judge scoring, citation accuracy, hallucination detection, latency tracking, agreement analysis, and saved charts |
 
@@ -69,7 +69,7 @@ That makes the repo useful both as a working demo and as an engineering case stu
   <tr>
     <td width="50%" valign="top">
       <img src="assets/readme/ui-chatbot-preview.png" alt="Document Chatbot interface preview" width="100%" />
-      <p><strong>Document Chatbot</strong><br/>Multi-turn Q&amp;A over a PDF collection, with source cards, conversation continuity, and fast iteration for document exploration.</p>
+      <p><strong>Document Chatbot</strong><br/>Multi-turn Q&amp;A over a PDF collection, with source cards, conversation history, and fast iteration for document exploration.</p>
     </td>
     <td width="50%" valign="top">
       <img src="assets/readme/ui-explorer-preview.png" alt="Pipeline Explorer interface preview" width="100%" />
@@ -108,7 +108,7 @@ python scripts/frame_readme_screenshots.py \
 - Answers questions over a folder of PDFs using retrieved evidence.
 - Extracts structured information from technical documents.
 - Compares multiple papers or reports side by side.
-- Supports multi-turn document chat with source citations.
+- Supports multi-turn document chat with grounded answers and source cards.
 - Benchmarks all three pipelines on the same evaluation set.
 
 ### Core tasks supported
@@ -118,7 +118,7 @@ python scripts/frame_readme_screenshots.py \
 | Grounded Q&amp;A | *What measurement techniques were used?* |
 | Structured extraction | *Extract the objective, methods, datasets, and findings.* |
 | Document comparison | *Compare the experimental approaches used across the papers.* |
-| Conversational follow-up | *Can you go into more detail on the PIV setup?* |
+| Follow-up chat | *Can you go into more detail on the PIV setup?* |
 
 ---
 
@@ -166,14 +166,16 @@ flowchart TB
 
     langgraph --> pdf
     langgraph --> chunk
-    langgraph --> embed
-    langgraph --> retrieve
-    langgraph --> llm
+    langgraph --> embed --> openai
+    langgraph --> retrieve --> rerank
+    langgraph --> llm --> openai
 
     llama --> docs
     llama --> openai
     llama --> li
 ```
+
+The shared retriever plus CrossEncoder reranker path is used by the **Manual** and **LangGraph** pipelines. The **LlamaIndex** pipeline intentionally keeps its native framework-managed query path so the abstraction trade-off stays visible.
 
 ### Canonical project path
 
@@ -201,7 +203,7 @@ For a quick, high-signal tour of the repo, start here:
 |---|---|---|---|
 | Abstraction level | Low | Medium | High |
 | Retrieval pattern | Single-query retrieval | Multi-step, query decomposition | Framework-managed retrieval |
-| Reranking | CrossEncoder (shared core) | CrossEncoder (shared core) | CrossEncoder (shared core) |
+| Reranking | CrossEncoder (shared core) | CrossEncoder (shared core) | No shared CrossEncoder reranker |
 | Chunking style | Character-based | Character-based | Sentence-aware |
 | Self-correction loop | No | Yes | No |
 | Index persistence | Cache-based | Cache-based | Built-in storage |
@@ -215,7 +217,7 @@ The Streamlit app is the fastest way to understand the project.
 
 | Mode | What you can do | What it demonstrates |
 |---|---|---|
-| **Document Chatbot** | Ask follow-up questions over your PDF set | Conversational retrieval, source grounding, session-aware UX |
+| **Document Chatbot** | Ask follow-up questions over your PDF set | Multi-turn document chat, source grounding, session-aware UX |
 | **Pipeline Explorer** | Run one pipeline or compare all three side by side | Architectural trade-offs in quality, latency, and response style |
 
 Run the app locally:
@@ -474,9 +476,9 @@ This repo answers that question by implementing the same workflow three ways and
 
 ### About me
 
-I am **Tingyi Zhang**, a Postdoctoral Research Associate at **UNSW Sydney** focused on applied AI, retrieval workflows, and research-facing product development.
+I am **Tingyi Zhang**, a Postdoctoral Research Associate at **UNSW Sydney** focused on applied AI, aerodynamics and aeroacoustics.
 
-My work sits at the intersection of **LLM systems, technical document understanding, evaluation, and usable interfaces**. I like building projects that are rigorous enough for research conversations and polished enough for real users to explore.
+I like building projects that are rigorous enough for research conversations and polished enough for real users to explore.
 
 ### What I built
 
@@ -488,9 +490,9 @@ Instead of implementing one happy-path stack, I built the same core workflow thr
 - a **LangGraph agent** to test decomposition, critique, and iterative refinement
 - a **LlamaIndex pipeline** to evaluate what a higher-level framework buys you in speed and maintainability
 
-I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 12 test queries.
+I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 12 evaluation queries.
 
-All three pipelines share a **unified `PipelineResult` contract** and a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit every backend automatically.
+All three pipelines share a **unified `PipelineResult` contract**. Manual and LangGraph share a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit both backends automatically. LlamaIndex deliberately uses its own framework-native retrieval path, providing a direct comparison of custom vs. framework-managed retrieval (see [`docs/DESIGN_TRADEOFFS.md`](docs/DESIGN_TRADEOFFS.md)).
 
 ### What this project says about how I work
 
