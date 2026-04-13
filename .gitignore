@@ -1,32 +1,23 @@
+# Secrets
 .env
+
+# Local caches / generated indexes
 cache/
 llamaindex_storage/
-eval_results/
+
+# Local document inputs
+pdfs/
+raw/
+new-rag-llm-workflow/
+
+# Python
 __pycache__/
 *.pyc
 venv/
 .venv/
-.DS_Store__pycache__/
-*.pyc
+
+# OS files
 .DS_Store
-cache/
-llamaindex_storage/
-eval_results/
-pdfs/
+
+# Archives
 *.zip
-new-rag-llm-worflow/
-raw/
-.env
-venc/
-__pycache__/
-*.pyc
-.DS_Store
-cache/
-llamaindex_storage/
-eval_results/
-pdfs/
-*.zip
-new-rag-llm-workflow/
-raw/
-.env
-venv/
