@@ -59,7 +59,7 @@ That makes the repo useful both as a working demo and as an engineering case stu
 | Comparative system design | The same workflow is implemented with manual code, LangGraph, and LlamaIndex |
 | Retrieval quality | Two-stage retrieval (cosine + CrossEncoder) for Manual and LangGraph; LlamaIndex-native retrieval for framework comparison |
 | Product thinking | Streamlit app with a chatbot mode and side-by-side explorer |
-| Evaluation discipline | LLM-as-judge scoring, citation accuracy, hallucination detection, latency tracking, agreement analysis, and saved charts |
+| Evaluation discipline | LLM-as-judge scoring, citation accuracy, hallucination detection, latency and token tracking, estimated cost comparison, agreement analysis, and saved charts |
 
 ---
 
@@ -230,7 +230,7 @@ streamlit run app/streamlit_app.py
 
 ## Evaluation snapshots
 
-The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, citation accuracy, hallucination rates, and agreement trends. The harness runs 23 queries across six categories (factual, summary, technical, comparison, critical, and unanswerable) through all three pipelines.
+The repo includes an evaluation harness plus saved charts in `eval_results/` so reviewers can quickly inspect quality, latency, token usage, estimated cost, citation accuracy, hallucination rates, and agreement trends. The harness runs 23 queries across six categories (factual, summary, technical, comparison, critical, and unanswerable) through all three pipelines.
 
 | Overall quality | Latency |
 |---|---|
@@ -247,9 +247,9 @@ The repo includes an evaluation harness plus saved charts in `eval_results/` so 
 |---|
 | ![Citation and hallucination](eval_results/07_citation_hallucination.png) |
 
-| Quality by query type |
-|---|
-| ![Query type quality](eval_results/08_query_type_quality.png) |
+| Quality by query type | Query cost |
+|---|---|
+| ![Query type quality](eval_results/08_query_type_quality.png) | ![Query cost](eval_results/09_query_cost.png) |
 
 </details>
 
@@ -263,6 +263,7 @@ The repo includes an evaluation harness plus saved charts in `eval_results/` so 
 | Citation accuracy | Do inline source references match actually retrieved chunks? |
 | Hallucination freedom | Are all factual claims supported, or are some fabricated? |
 | Latency | How long does each pipeline take to respond? |
+| Token usage & estimated cost | How many API tokens does each answer use, and what does that imply for cost? |
 | Cross-pipeline agreement | Do the pipelines converge on similar conclusions? |
 
 Run the evaluator:
@@ -283,6 +284,7 @@ Outputs are written to:
 - `eval_results/06_radar.png`
 - `eval_results/07_citation_hallucination.png`
 - `eval_results/08_query_type_quality.png`
+- `eval_results/09_query_cost.png`
 
 ---
 
@@ -376,6 +378,7 @@ rag-llm-workflow/
 │   │   ├── embedder.py
 │   │   ├── llm.py
 │   │   ├── pdf_loader.py
+│   │   ├── usage.py
 │   │   ├── retriever.py
 │   │   └── types.py
 │   ├── evaluation/
@@ -497,7 +500,7 @@ Instead of implementing one happy-path stack, I built the same core workflow thr
 - a **LangGraph agent** to test decomposition, critique, and iterative refinement
 - a **LlamaIndex pipeline** to evaluate what a higher-level framework buys you in speed and maintainability
 
-I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, and cross-pipeline agreement across 23 evaluation queries.
+I then wrapped those pipelines in a **Streamlit interface** with both a chatbot mode and a side-by-side explorer, and added an **evaluation harness** that scores answer quality, citation accuracy, hallucination freedom, latency, token usage, estimated cost, and cross-pipeline agreement across 23 evaluation queries.
 
 All three pipelines share a **unified `PipelineResult` contract**. Manual and LangGraph share a **two-stage retrieval system** — cosine similarity for broad recall, followed by CrossEncoder reranking for precision — so improvements to the shared core benefit both backends automatically. LlamaIndex deliberately uses its own framework-native retrieval path, providing a direct comparison of custom vs. framework-managed retrieval (see [`docs/DESIGN_TRADEOFFS.md`](docs/DESIGN_TRADEOFFS.md)).
 
@@ -515,11 +518,11 @@ For hiring managers, this project is meant to reflect the way I approach AI engi
 
 If I continued this project, the next steps I would prioritise are:
 
-- adding stronger conversational retrieval for follow-up questions
-- adding token usage tracking for cost comparison across pipelines
-- deploying a polished public demo with curated sample PDFs and production-quality screenshots
+- evaluating multi-turn follow-up retrieval quality with a dedicated chat benchmark
 - adding hybrid BM25 + dense retrieval as a fourth pipeline option
-- implementing streaming responses in the Streamlit UI for better UX
+- deploying a polished public demo with curated sample PDFs and production-quality screenshots
+- adding snippet-level evidence previews in the Streamlit UI
+- adding CI, smoke tests, and reproducible fixture documents
 
 ---
 

@@ -18,6 +18,7 @@ import re
 from src.config import TOP_K
 from src.core.llm import call_llm, call_llm_chat
 from src.core.retriever import format_context, retrieve_top_k
+from src.core.usage import finalise_usage, usage_tracking_session
 
 
 # ── System prompt ───────────────────────────────────────────────
@@ -83,6 +84,7 @@ class RAGChatbot:
         # Debug / inspection state
         self.last_retrieval_query: str | None = None
         self.last_retrieval_rewritten: bool = False
+        self.last_usage: dict | None = None
 
     @staticmethod
     def _normalise_text(text: str) -> str:
@@ -188,50 +190,53 @@ class RAGChatbot:
         Returns:
             tuple[str, list[dict]]: (response_text, retrieved_sources)
         """
-        retrieval_query = self._rewrite_retrieval_query(user_message)
-        self.last_retrieval_query = retrieval_query
-        self.last_retrieval_rewritten = (
-            self._normalise_text(retrieval_query) != self._normalise_text(user_message)
-        )
-
-        retrieved = retrieve_top_k(
-            retrieval_query,
-            self.df_chunks,
-            self.embeddings,
-            top_k=self.top_k,
-        )
-        context = format_context(retrieved)
-
-        augmented_message = (
-            f"{user_message}\n\n"
-            f"--- Retrieved Document Context ---\n{context}"
-        )
-
-        # Temporarily store the current user turn with retrieved context so the
-        # answer-generation step can see both the clean conversation and the
-        # newly retrieved evidence.
-        self.history.append({"role": "user", "content": augmented_message})
-
-        messages = [{"role": "system", "content": self.system_prompt}]
-        messages.extend(self._trim_history(max_turns=ANSWER_HISTORY_TURNS))
-
-        response = call_llm_chat(messages)
-
-        # Replace the augmented message with the clean user turn so the history
-        # remains readable and compact for later rewrites.
-        self.history[-1] = {"role": "user", "content": user_message}
-        self.history.append({"role": "assistant", "content": response})
-
-        sources = []
-        for _, row in retrieved.iterrows():
-            sources.append(
-                {
-                    "file": row["doc_name"],
-                    "page": row["page_number"],
-                    "score": round(row["similarity"], 4),
-                    "chunk_id": row["chunk_id"],
-                }
+        with usage_tracking_session() as usage:
+            retrieval_query = self._rewrite_retrieval_query(user_message)
+            self.last_retrieval_query = retrieval_query
+            self.last_retrieval_rewritten = (
+                self._normalise_text(retrieval_query) != self._normalise_text(user_message)
             )
+
+            retrieved = retrieve_top_k(
+                retrieval_query,
+                self.df_chunks,
+                self.embeddings,
+                top_k=self.top_k,
+            )
+            context = format_context(retrieved)
+
+            augmented_message = (
+                f"{user_message}\n\n"
+                f"--- Retrieved Document Context ---\n{context}"
+            )
+
+            # Temporarily store the current user turn with retrieved context so the
+            # answer-generation step can see both the clean conversation and the
+            # newly retrieved evidence.
+            self.history.append({"role": "user", "content": augmented_message})
+
+            messages = [{"role": "system", "content": self.system_prompt}]
+            messages.extend(self._trim_history(max_turns=ANSWER_HISTORY_TURNS))
+
+            response = call_llm_chat(messages)
+
+            # Replace the augmented message with the clean user turn so the history
+            # remains readable and compact for later rewrites.
+            self.history[-1] = {"role": "user", "content": user_message}
+            self.history.append({"role": "assistant", "content": response})
+
+            sources = []
+            for _, row in retrieved.iterrows():
+                sources.append(
+                    {
+                        "file": row["doc_name"],
+                        "page": row["page_number"],
+                        "score": round(row["similarity"], 4),
+                        "chunk_id": row["chunk_id"],
+                    }
+                )
+
+            self.last_usage = finalise_usage(usage)
 
         return response, sources
 
@@ -240,6 +245,7 @@ class RAGChatbot:
         self.history = []
         self.last_retrieval_query = None
         self.last_retrieval_rewritten = False
+        self.last_usage = None
 
     def get_history(self) -> list[dict]:
         """Return the conversation history (user/assistant messages only)."""
@@ -253,6 +259,7 @@ class RAGChatbot:
         return {
             "retrieval_query": self.last_retrieval_query,
             "rewritten": self.last_retrieval_rewritten,
+            "usage": self.last_usage,
         }
 
     @property

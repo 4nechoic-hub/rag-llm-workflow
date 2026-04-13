@@ -38,6 +38,7 @@ import pandas as pd
 from src.config import EVAL_OUTPUT_DIR, TOP_K
 from src.core.llm import call_llm
 from src.core.types import PipelineResult
+from src.core.usage import empty_usage, finalise_usage, usage_tracking_session
 
 
 # ── Constants ───────────────────────────────────────────────────
@@ -235,6 +236,14 @@ def pipeline_metadata(result: PipelineResult) -> Dict[str, Any]:
 
 
 
+def normalise_usage(usage: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Return a stable, cost-aware usage payload."""
+    if not isinstance(usage, dict):
+        usage = empty_usage()
+    return finalise_usage(usage)
+
+
+
 def build_error_result(message: str) -> PipelineResult:
     result = PipelineResult(answer=message)
     result.latency = 0.0
@@ -417,7 +426,8 @@ def prepare_manual() -> Dict[str, Any]:
     from src.pipelines.manual_pipeline import answer_question, build_manual_pipeline
 
     t0 = time.time()
-    df_chunks, embeddings = build_manual_pipeline()
+    with usage_tracking_session() as prepare_usage:
+        df_chunks, embeddings = build_manual_pipeline()
     prepare_time_s = time.time() - t0
 
     def run(query: str) -> PipelineResult:
@@ -426,7 +436,11 @@ def prepare_manual() -> Dict[str, Any]:
         result.latency = time.time() - q0
         return result
 
-    return {"run": run, "prepare_time_s": prepare_time_s}
+    return {
+        "run": run,
+        "prepare_time_s": prepare_time_s,
+        "prepare_usage": finalise_usage(prepare_usage),
+    }
 
 
 
@@ -434,7 +448,8 @@ def prepare_langgraph() -> Dict[str, Any]:
     from src.pipelines.langgraph_agent import build_langgraph_pipeline, run_research_agent
 
     t0 = time.time()
-    agent = build_langgraph_pipeline()
+    with usage_tracking_session() as prepare_usage:
+        agent = build_langgraph_pipeline()
     prepare_time_s = time.time() - t0
 
     def run(query: str) -> PipelineResult:
@@ -443,7 +458,11 @@ def prepare_langgraph() -> Dict[str, Any]:
         result.latency = time.time() - q0
         return result
 
-    return {"run": run, "prepare_time_s": prepare_time_s}
+    return {
+        "run": run,
+        "prepare_time_s": prepare_time_s,
+        "prepare_usage": finalise_usage(prepare_usage),
+    }
 
 
 
@@ -453,6 +472,7 @@ def prepare_llamaindex() -> Dict[str, Any]:
     t0 = time.time()
     index = build_index(force_rebuild=False)
     prepare_time_s = time.time() - t0
+    prepare_usage = normalise_usage(getattr(index, "_build_usage", empty_usage()))
 
     def run(query: str) -> PipelineResult:
         q0 = time.time()
@@ -460,7 +480,11 @@ def prepare_llamaindex() -> Dict[str, Any]:
         result.latency = time.time() - q0
         return result
 
-    return {"run": run, "prepare_time_s": prepare_time_s}
+    return {
+        "run": run,
+        "prepare_time_s": prepare_time_s,
+        "prepare_usage": prepare_usage,
+    }
 
 
 PIPELINE_PREPARERS: Dict[str, Callable[[], Dict[str, Any]]] = {
@@ -491,6 +515,12 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
             prepared["prepare_time_s"] = time.time() - t0
         prepared_runners[pipe_name] = prepared
         print(f"    Prepare time: {prepared['prepare_time_s']:.2f}s")
+        prepare_usage = normalise_usage(prepared.get("prepare_usage"))
+        if prepare_usage.get("total_api_tokens", 0) > 0 or prepare_usage.get("estimated_cost_usd", 0.0) > 0:
+            print(
+                f"    Prepare usage: {prepare_usage.get('total_api_tokens', 0):,} tokens | "
+                f"${prepare_usage.get('estimated_cost_usd', 0.0):.5f}"
+            )
 
     for case in eval_cases:
         qid = case["id"]
@@ -523,6 +553,8 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
             latency_s = query_time_s  # compatibility with existing charts / README
             source_dicts = normalise_sources(getattr(result, "source_dicts", []))
             metadata = pipeline_metadata(result)
+            query_usage = normalise_usage(metadata.get("usage"))
+            prepare_usage = normalise_usage(prepared.get("prepare_usage"))
             answers[pipe_name] = answer
 
             if error_message:
@@ -556,6 +588,13 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                         f"Source: {metadata.get('schema_source')} | "
                         f"Error: {metadata.get('schema_error_type')}"
                     )
+            if query_usage.get("total_api_tokens", 0) > 0 or query_usage.get("estimated_cost_usd", 0.0) > 0:
+                print(
+                    f"    Usage: prompt {query_usage.get('prompt_tokens', 0):,} | "
+                    f"completion {query_usage.get('completion_tokens', 0):,} | "
+                    f"embedding {query_usage.get('embedding_tokens', 0):,} | "
+                    f"cost ${query_usage.get('estimated_cost_usd', 0.0):.5f}"
+                )
 
             summary_rows.append({
                 "row_type": "pipeline",
@@ -586,6 +625,24 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                 "schema_error_type": metadata.get("schema_error_type"),
                 "repair_attempted": metadata.get("repair_attempted"),
                 "repair_succeeded": metadata.get("repair_succeeded"),
+                "llm_calls": safe_int(query_usage.get("llm_calls", 0), 0),
+                "embedding_calls": safe_int(query_usage.get("embedding_calls", 0), 0),
+                "prompt_tokens": safe_int(query_usage.get("prompt_tokens", 0), 0),
+                "cached_prompt_tokens": safe_int(query_usage.get("cached_prompt_tokens", 0), 0),
+                "completion_tokens": safe_int(query_usage.get("completion_tokens", 0), 0),
+                "llm_total_tokens": safe_int(query_usage.get("total_llm_tokens", 0), 0),
+                "embedding_tokens": safe_int(query_usage.get("embedding_tokens", 0), 0),
+                "total_api_tokens": safe_int(query_usage.get("total_api_tokens", 0), 0),
+                "estimated_cost_usd": safe_float(query_usage.get("estimated_cost_usd", 0.0), 0.0),
+                "prepare_llm_calls": safe_int(prepare_usage.get("llm_calls", 0), 0),
+                "prepare_embedding_calls": safe_int(prepare_usage.get("embedding_calls", 0), 0),
+                "prepare_prompt_tokens": safe_int(prepare_usage.get("prompt_tokens", 0), 0),
+                "prepare_cached_prompt_tokens": safe_int(prepare_usage.get("cached_prompt_tokens", 0), 0),
+                "prepare_completion_tokens": safe_int(prepare_usage.get("completion_tokens", 0), 0),
+                "prepare_llm_total_tokens": safe_int(prepare_usage.get("total_llm_tokens", 0), 0),
+                "prepare_embedding_tokens": safe_int(prepare_usage.get("embedding_tokens", 0), 0),
+                "prepare_total_api_tokens": safe_int(prepare_usage.get("total_api_tokens", 0), 0),
+                "prepare_estimated_cost_usd": safe_float(prepare_usage.get("estimated_cost_usd", 0.0), 0.0),
                 "quality_score": metadata.get("quality_score"),
                 "iterations": metadata.get("iterations"),
                 "completeness": safe_float(quality.get("completeness", 0), 0.0),
@@ -621,6 +678,10 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                     "query_time_s": round(query_time_s, 4),
                     "latency_s": round(latency_s, 4),
                     "is_first_query": is_first_query,
+                },
+                "usage": {
+                    "query": query_usage,
+                    "prepare": prepare_usage,
                 },
                 "retrieval": {
                     "avg_similarity": round(safe_float(getattr(result, "avg_similarity", 0.0), 0.0), 6),
@@ -677,6 +738,24 @@ def run_full_evaluation(eval_cases: List[Dict[str, Any]]) -> Tuple[pd.DataFrame,
                     "schema_error_type": None,
                     "repair_attempted": None,
                     "repair_succeeded": None,
+                    "llm_calls": 0,
+                    "embedding_calls": 0,
+                    "prompt_tokens": 0,
+                    "cached_prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "llm_total_tokens": 0,
+                    "embedding_tokens": 0,
+                    "total_api_tokens": 0,
+                    "estimated_cost_usd": 0.0,
+                    "prepare_llm_calls": 0,
+                    "prepare_embedding_calls": 0,
+                    "prepare_prompt_tokens": 0,
+                    "prepare_cached_prompt_tokens": 0,
+                    "prepare_completion_tokens": 0,
+                    "prepare_llm_total_tokens": 0,
+                    "prepare_embedding_tokens": 0,
+                    "prepare_total_api_tokens": 0,
+                    "prepare_estimated_cost_usd": 0.0,
                     "quality_score": None,
                     "iterations": None,
                     "completeness": 0,
@@ -916,6 +995,21 @@ def generate_charts(df: pd.DataFrame) -> None:
     plt.savefig(EVAL_OUTPUT_PATH / "08_query_type_quality.png", dpi=150)
     plt.close()
 
+    # Chart 9: Average estimated query cost
+    fig, ax = plt.subplots(figsize=(8, 5))
+    cost_pivot = df_pipes.groupby("pipeline")["estimated_cost_usd"].mean().reindex(PIPE_ORDER)
+    bars = ax.bar(cost_pivot.index, cost_pivot.values, color=[COLOURS[p] for p in cost_pivot.index], edgecolor="white", linewidth=1.2)
+    ax.set_ylabel("Average Estimated Query Cost (USD)")
+    ax.set_title("Average Query Cost by Pipeline", fontweight="bold")
+    ax.spines[["top", "right"]].set_visible(False)
+    ymax = max(float(cost_pivot.max() or 0.0) * 1.15, 0.00001)
+    ax.set_ylim(0, ymax)
+    for bar, val in zip(bars, cost_pivot.values):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + ymax * 0.02, f"${val:.5f}", ha="center", fontweight="bold")
+    plt.tight_layout()
+    plt.savefig(EVAL_OUTPUT_PATH / "09_query_cost.png", dpi=150)
+    plt.close()
+
     print(f"  Charts saved to {EVAL_OUTPUT_PATH}/")
 
 
@@ -937,6 +1031,9 @@ def print_summary(df: pd.DataFrame) -> None:
         "hallucination_score": "mean",
         "query_time_s": "mean",
         "prepare_time_s": "mean",
+        "estimated_cost_usd": "mean",
+        "prepare_estimated_cost_usd": "mean",
+        "total_api_tokens": "mean",
     }).reindex(PIPE_ORDER)
     summary.columns = [
         "Overall",
@@ -947,11 +1044,17 @@ def print_summary(df: pd.DataFrame) -> None:
         "Halluc.Free",
         "Query(s)",
         "Prepare(s)",
+        "QueryCost($)",
+        "PrepCost($)",
+        "Tokens",
     ]
     for col in ["Overall", "Complete", "Grounded", "Clarity", "Citation", "Halluc.Free"]:
         summary[col] = summary[col].round(1)
     summary["Query(s)"] = summary["Query(s)"].round(2)
     summary["Prepare(s)"] = summary["Prepare(s)"].round(2)
+    summary["QueryCost($)"] = summary["QueryCost($)"].round(5)
+    summary["PrepCost($)"] = summary["PrepCost($)"].round(5)
+    summary["Tokens"] = summary["Tokens"].round(0).astype(int)
     print(f"\n{summary.to_string()}")
 
     print(f"\n{'-' * 72}\nBEST PIPELINE PER DIMENSION\n{'-' * 72}")
@@ -959,7 +1062,9 @@ def print_summary(df: pd.DataFrame) -> None:
         best = summary[col].idxmax()
         print(f"  {col:12s}: {best} ({summary.loc[best, col]})")
     fastest = summary["Query(s)"].idxmin()
+    cheapest = summary["QueryCost($)"].idxmin()
     print(f"  {'Speed':12s}: {fastest} ({summary.loc[fastest, 'Query(s)']}s)")
+    print(f"  {'Cost':12s}: {cheapest} (${summary.loc[cheapest, 'QueryCost($)']})")
 
     print(f"\n{'-' * 72}\nQUALITY BY QUERY TYPE\n{'-' * 72}")
     query_type_summary = (

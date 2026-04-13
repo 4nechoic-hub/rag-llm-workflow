@@ -28,6 +28,7 @@ from src.core.llm import call_llm
 from src.core.pdf_loader import load_all_pdfs
 from src.core.retriever import format_context, retrieve_top_k
 from src.core.types import PipelineResult, SourceChunk
+from src.core.usage import finalise_usage, usage_tracking_session
 from src.config import MAX_ITERATIONS, PDF_FOLDER, QUALITY_THRESHOLD, TOP_K, RERANK_ENABLED
 
 
@@ -439,7 +440,28 @@ def run_research_agent(
         "iteration": 0,
         "final_answer": "",
     }
-    state = agent.invoke(initial_state)
+
+    with usage_tracking_session() as usage:
+        state = agent.invoke(initial_state)
+
+        answer_text = state.get("answer") or state.get("final_answer") or ""
+        metadata = {
+            "backend": "langgraph",
+            "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
+            "rerank_enabled": RERANK_ENABLED,
+            "chunking_style": "character",
+            "top_k": top_k,
+            "quality_score": state.get("quality_score"),
+            "iterations": state.get("iteration"),
+            "sub_questions": state.get("sub_questions", []),
+            "critique": state.get("critique", ""),
+        }
+
+        if task_type == "Structured Extraction":
+            answer_text, extraction_meta = validate_and_format_extraction(answer_text, attempt_repair=True)
+            metadata.update(extraction_meta)
+
+        usage_summary = finalise_usage(usage)
 
     source_chunks = [
         SourceChunk(
@@ -451,22 +473,7 @@ def run_research_agent(
         for s in state.get("sources", [])
     ]
 
-    answer_text = state.get("answer") or state.get("final_answer") or ""
-    metadata = {
-        "backend": "langgraph",
-        "retrieval_mode": "cosine+crossencoder" if RERANK_ENABLED else "cosine_only",
-        "rerank_enabled": RERANK_ENABLED,
-        "chunking_style": "character",
-        "top_k": top_k,
-        "quality_score": state.get("quality_score"),
-        "iterations": state.get("iteration"),
-        "sub_questions": state.get("sub_questions", []),
-        "critique": state.get("critique", ""),
-    }
-
-    if task_type == "Structured Extraction":
-        answer_text, extraction_meta = validate_and_format_extraction(answer_text, attempt_repair=True)
-        metadata.update(extraction_meta)
+    metadata["usage"] = usage_summary
 
     return PipelineResult(
         answer=answer_text,

@@ -8,20 +8,35 @@ sentence-aware chunking, vector indexing, and query engines.
 Author: Tingyi Zhang
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
+import tiktoken
 from llama_index.core import (
-    SimpleDirectoryReader,
-    VectorStoreIndex,
-    StorageContext,
-    load_index_from_storage,
-    Settings,
     PromptTemplate,
+    Settings,
+    SimpleDirectoryReader,
+    StorageContext,
+    VectorStoreIndex,
+    load_index_from_storage,
 )
+from llama_index.core.callbacks import CallbackManager, TokenCountingHandler
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.llms.openai import OpenAI as LlamaOpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI as LlamaOpenAI
 
+from src.config import (
+    CHAT_MODEL,
+    EMBEDDING_MODEL,
+    LI_CHUNK_OVERLAP,
+    LI_CHUNK_SIZE,
+    LLAMAINDEX_STORAGE,
+    OPENAI_API_KEY,
+    PDF_FOLDER,
+    TEMPERATURE,
+    TOP_K,
+)
 from src.core.extraction import (
     EXTRACTION_MISSING_VALUE,
     extraction_field_bullets,
@@ -29,23 +44,67 @@ from src.core.extraction import (
     validate_and_format_extraction,
 )
 from src.core.types import PipelineResult, sources_from_llamaindex
-from src.config import (
-    OPENAI_API_KEY,
-    CHAT_MODEL,
-    EMBEDDING_MODEL,
-    TEMPERATURE,
-    LI_CHUNK_SIZE,
-    LI_CHUNK_OVERLAP,
-    TOP_K,
-    PDF_FOLDER,
-    LLAMAINDEX_STORAGE,
-)
+from src.core.usage import empty_usage, finalise_usage, merge_usage, usage_tracking_session
 
 
-# ── Configure LlamaIndex global settings ────────────────────────
+# ── Token counting + LlamaIndex settings ────────────────────────
+
+_TOKEN_COUNTER: TokenCountingHandler | None = None
+_CALLBACK_MANAGER: CallbackManager | None = None
+
+
+
+def _tokenizer_for_model(model_name: str):
+    """Return a best-effort tokenizer function for LlamaIndex token counting."""
+    try:
+        return tiktoken.encoding_for_model(model_name).encode
+    except Exception:  # noqa: BLE001
+        return tiktoken.get_encoding("cl100k_base").encode
+
+
+
+def _get_token_counter() -> TokenCountingHandler:
+    """Create a shared LlamaIndex token counter once."""
+    global _TOKEN_COUNTER, _CALLBACK_MANAGER
+    if _TOKEN_COUNTER is None:
+        _TOKEN_COUNTER = TokenCountingHandler(tokenizer=_tokenizer_for_model(CHAT_MODEL))
+        _CALLBACK_MANAGER = CallbackManager([_TOKEN_COUNTER])
+    return _TOKEN_COUNTER
+
+
+
+def _reset_token_counter() -> TokenCountingHandler:
+    """Reset the shared counter before a build or query."""
+    token_counter = _get_token_counter()
+    token_counter.reset_counts()
+    return token_counter
+
+
+
+def _usage_from_token_counter() -> dict:
+    """Convert the shared LlamaIndex token counter into repo-standard usage metadata."""
+    token_counter = _get_token_counter()
+    llm_events = getattr(token_counter, "llm_token_counts", []) or []
+    embedding_events = getattr(token_counter, "embedding_token_counts", []) or []
+
+    usage = {
+        "llm_model": CHAT_MODEL,
+        "embedding_model": EMBEDDING_MODEL,
+        "llm_calls": len(llm_events),
+        "embedding_calls": len(embedding_events),
+        "prompt_tokens": int(getattr(token_counter, "prompt_llm_token_count", 0) or 0),
+        "cached_prompt_tokens": 0,
+        "completion_tokens": int(getattr(token_counter, "completion_llm_token_count", 0) or 0),
+        "total_llm_tokens": int(getattr(token_counter, "total_llm_token_count", 0) or 0),
+        "embedding_tokens": int(getattr(token_counter, "total_embedding_token_count", 0) or 0),
+    }
+    return finalise_usage(usage)
+
+
 
 def _configure_settings():
-    """Set LlamaIndex global LLM, embeddings, and node parser."""
+    """Set LlamaIndex global LLM, embeddings, node parser, and callback manager."""
+    _get_token_counter()
     Settings.llm = LlamaOpenAI(
         model=CHAT_MODEL,
         temperature=TEMPERATURE,
@@ -59,6 +118,8 @@ def _configure_settings():
         chunk_size=LI_CHUNK_SIZE,
         chunk_overlap=LI_CHUNK_OVERLAP,
     )
+    if _CALLBACK_MANAGER is not None:
+        Settings.callback_manager = _CALLBACK_MANAGER
 
 
 # ── Prompt templates ────────────────────────────────────────────
@@ -115,6 +176,7 @@ CHAT_PROMPT = PromptTemplate(
 
 # ── Index management ────────────────────────────────────────────
 
+
 def build_index(
     pdf_folder: str = PDF_FOLDER,
     persist_dir: str = LLAMAINDEX_STORAGE,
@@ -128,6 +190,8 @@ def build_index(
         print("Loading persisted index from disk...")
         storage_context = StorageContext.from_defaults(persist_dir=str(persist_path))
         index = load_index_from_storage(storage_context)
+        setattr(index, "_build_usage", empty_usage(llm_model=CHAT_MODEL, embedding_model=EMBEDDING_MODEL))
+        setattr(index, "_index_source", "loaded_from_disk")
         print(f"  Index loaded from {persist_path}")
         return index
 
@@ -143,14 +207,18 @@ def build_index(
     print(f"  Loaded {len(documents)} document page(s)")
 
     print("Building vector index (chunking + embedding)...")
+    _reset_token_counter()
     index = VectorStoreIndex.from_documents(documents, show_progress=True)
 
     index.storage_context.persist(persist_dir=str(persist_path))
+    setattr(index, "_build_usage", _usage_from_token_counter())
+    setattr(index, "_index_source", "built_fresh")
     print(f"  Index persisted to {persist_path}")
     return index
 
 
 # ── Query engines ───────────────────────────────────────────────
+
 
 def create_query_engine(index, prompt_template=QA_PROMPT, top_k=TOP_K):
     """Create a query engine with a custom prompt."""
@@ -167,7 +235,7 @@ def create_retriever(index, top_k=TOP_K):
 
 
 
-def _llamaindex_metadata(top_k: int) -> dict:
+def _llamaindex_metadata(top_k: int, index) -> dict:
     """Metadata describing the framework-native LlamaIndex retrieval path."""
     return {
         "backend": "llamaindex",
@@ -175,19 +243,31 @@ def _llamaindex_metadata(top_k: int) -> dict:
         "rerank_enabled": False,
         "chunking_style": "sentence",
         "top_k": top_k,
+        "index_source": getattr(index, "_index_source", None),
     }
+
+
+
+def _query_usage_context(index, top_k: int) -> dict:
+    """Base metadata container for a single LlamaIndex query."""
+    return _llamaindex_metadata(top_k, index)
 
 
 # ── Task functions ──────────────────────────────────────────────
 
+
 def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
     """Grounded Q&A using LlamaIndex query engine."""
     engine = create_query_engine(index, prompt_template=QA_PROMPT, top_k=top_k)
-    response = engine.query(query)
+    _reset_token_counter()
+    with usage_tracking_session() as extra_usage:
+        response = engine.query(query)
+    total_usage = merge_usage(_usage_from_token_counter(), extra_usage)
+    metadata = {**_query_usage_context(index, top_k), "usage": total_usage}
     return PipelineResult(
         answer=str(response),
         sources=sources_from_llamaindex(response),
-        metadata=_llamaindex_metadata(top_k),
+        metadata=metadata,
     )
 
 
@@ -195,11 +275,13 @@ def answer_question(query, index, top_k=TOP_K) -> PipelineResult:
 def extract_structured(query, index, top_k=6) -> PipelineResult:
     """Structured extraction with shared schema validation and repair."""
     engine = create_query_engine(index, prompt_template=EXTRACTION_PROMPT, top_k=top_k)
-    response = engine.query(query)
-
-    raw_output = str(response)
-    formatted, extraction_meta = validate_and_format_extraction(raw_output, attempt_repair=True)
-    metadata = {**_llamaindex_metadata(top_k), **extraction_meta}
+    _reset_token_counter()
+    with usage_tracking_session() as extra_usage:
+        response = engine.query(query)
+        raw_output = str(response)
+        formatted, extraction_meta = validate_and_format_extraction(raw_output, attempt_repair=True)
+    total_usage = merge_usage(_usage_from_token_counter(), extra_usage)
+    metadata = {**_query_usage_context(index, top_k), **extraction_meta, "usage": total_usage}
 
     return PipelineResult(
         answer=formatted,
@@ -212,9 +294,13 @@ def extract_structured(query, index, top_k=6) -> PipelineResult:
 def compare_documents(query, index, top_k=8) -> PipelineResult:
     """Document comparison via custom prompt template."""
     engine = create_query_engine(index, prompt_template=COMPARISON_PROMPT, top_k=top_k)
-    response = engine.query(query)
+    _reset_token_counter()
+    with usage_tracking_session() as extra_usage:
+        response = engine.query(query)
+    total_usage = merge_usage(_usage_from_token_counter(), extra_usage)
+    metadata = {**_query_usage_context(index, top_k), "usage": total_usage}
     return PipelineResult(
         answer=str(response),
         sources=sources_from_llamaindex(response),
-        metadata=_llamaindex_metadata(top_k),
+        metadata=metadata,
     )

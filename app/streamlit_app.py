@@ -68,17 +68,17 @@ st.markdown("""
 # SIDEBAR
 # ==========================================================
 
-# Defaults so both app modes have defined settings
-top_k = 5
+default_top_k = 5
 show_sources = True
 show_timing = True
 show_retrieval_debug = False
+show_usage = True
+
 with st.sidebar:
     st.title("🔍 RAG Pipeline Demo")
     st.caption("Explore & chat with your technical documents")
     st.divider()
 
-    # API key check
     if api_key:
         st.success("API key loaded from .env", icon="✅")
     else:
@@ -91,7 +91,6 @@ with st.sidebar:
 
     st.divider()
 
-    # Mode selection
     app_mode = st.radio(
         "Mode",
         ["💬 Document Chatbot", "🔬 Pipeline Explorer"],
@@ -113,13 +112,16 @@ with st.sidebar:
         st.divider()
 
         with st.expander("⚙️ Settings", expanded=False):
-            top_k = st.slider("Top-K chunks", 3, 10, 5)
+            top_k = st.slider("Top-K chunks", 3, 10, default_top_k)
             show_sources = st.toggle("Show sources", value=True, key="explorer_show_sources")
             show_timing = st.toggle("Show latency", value=True, key="explorer_show_timing")
+            show_usage = st.toggle("Show token & cost", value=True, key="explorer_show_usage")
     else:
+        top_k = default_top_k
         with st.expander("⚙️ Chat settings", expanded=False):
             show_sources = st.toggle("Show sources", value=True, key="chat_show_sources")
             show_timing = st.toggle("Show latency", value=True, key="chat_show_timing")
+            show_usage = st.toggle("Show token & cost", value=False, key="chat_show_usage")
             show_retrieval_debug = st.toggle(
                 "Show retrieval query",
                 value=False,
@@ -129,7 +131,6 @@ with st.sidebar:
 
     st.divider()
 
-    # PDF folder status
     pdf_folder = project_root / "pdfs"
     if pdf_folder.exists():
         pdf_files = list(pdf_folder.glob("*.pdf"))
@@ -179,7 +180,7 @@ def load_chatbot():
 def query_manual(query, task, top_k):
     df_chunks, embeddings = load_manual_pipeline()
     from src.pipelines.manual_pipeline import (
-        answer_question, extract_structured_summary, compare_documents,
+        answer_question, compare_documents, extract_structured_summary,
     )
     t0 = time.time()
     if task == "Question Answering":
@@ -192,6 +193,7 @@ def query_manual(query, task, top_k):
     return result
 
 
+
 def query_langgraph(query, task, top_k):
     agent = load_langgraph_agent()
     from src.pipelines.langgraph_agent import run_research_agent
@@ -200,6 +202,7 @@ def query_langgraph(query, task, top_k):
     result = run_research_agent(agent, query, task_type=task, top_k=top_k)
     result.latency = time.time() - t0
     return result
+
 
 
 def query_llamaindex(query, task, top_k):
@@ -235,7 +238,49 @@ CARD_MAP = {
 }
 
 
-def display_result(pipe_name, result, show_sources, show_timing):
+
+def _safe_usage_dict(usage):
+    return usage if isinstance(usage, dict) else {}
+
+
+
+def display_usage_block(usage, title="💸 Token & cost", expanded=False):
+    """Render token and estimated-cost details from usage metadata."""
+    usage = _safe_usage_dict(usage)
+    if not usage:
+        return
+
+    total_api_tokens = int(usage.get("total_api_tokens", 0) or 0)
+    estimated_cost = float(usage.get("estimated_cost_usd", 0.0) or 0.0)
+    if total_api_tokens <= 0 and estimated_cost <= 0:
+        return
+
+    with st.expander(title, expanded=expanded):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"Prompt tokens: {int(usage.get('prompt_tokens', 0) or 0):,}")
+            st.write(f"Completion tokens: {int(usage.get('completion_tokens', 0) or 0):,}")
+            st.write(f"LLM calls: {int(usage.get('llm_calls', 0) or 0):,}")
+        with col2:
+            st.write(f"Embedding tokens: {int(usage.get('embedding_tokens', 0) or 0):,}")
+            st.write(f"Embedding calls: {int(usage.get('embedding_calls', 0) or 0):,}")
+            st.write(f"Estimated cost: ${estimated_cost:.5f}")
+
+        cached_prompt_tokens = int(usage.get("cached_prompt_tokens", 0) or 0)
+        if cached_prompt_tokens > 0:
+            st.caption(f"Includes {cached_prompt_tokens:,} cached prompt tokens.")
+
+        model_parts = []
+        if usage.get("llm_model"):
+            model_parts.append(f"LLM: {usage['llm_model']}")
+        if usage.get("embedding_model"):
+            model_parts.append(f"Embeddings: {usage['embedding_model']}")
+        if model_parts:
+            st.caption(" • ".join(model_parts))
+
+
+
+def display_result(pipe_name, result, show_sources, show_timing, show_usage):
     """Display a PipelineResult in the Streamlit UI."""
     st.markdown(
         f'<span class="{BADGE_MAP.get(pipe_name, "badge-manual")}">{pipe_name}</span>',
@@ -244,40 +289,44 @@ def display_result(pipe_name, result, show_sources, show_timing):
     if show_timing:
         st.caption(f"⏱️ {result.latency:.2f}s")
 
-    is_structured_extraction = bool(result.metadata and result.metadata.get("task_kind") == "structured_extraction")
+    metadata = result.metadata or {}
+    is_structured_extraction = bool(metadata.get("task_kind") == "structured_extraction")
     if is_structured_extraction:
         st.code(result.answer, language="json")
     else:
         st.markdown(result.answer)
 
-    # Retrieval metadata for all pipelines
-    if result.metadata:
-        retrieval_mode = result.metadata.get("retrieval_mode")
-        rerank_enabled = result.metadata.get("rerank_enabled")
-        chunking_style = result.metadata.get("chunking_style")
-        top_k_value = result.metadata.get("top_k")
+    if show_usage:
+        display_usage_block(metadata.get("usage"), title="💸 Token & cost", expanded=False)
 
-        if any(v is not None for v in [retrieval_mode, rerank_enabled, chunking_style, top_k_value]):
-            with st.expander("⚙️ Retrieval details", expanded=False):
-                if retrieval_mode:
-                    st.write(f"Retrieval mode: {retrieval_mode}")
-                if rerank_enabled is not None:
-                    st.write(f"Reranking: {'Enabled' if rerank_enabled else 'Disabled'}")
-                if chunking_style:
-                    st.write(f"Chunking style: {chunking_style}")
-                if top_k_value is not None:
-                    st.write(f"Top-k: {top_k_value}")
+    retrieval_mode = metadata.get("retrieval_mode")
+    rerank_enabled = metadata.get("rerank_enabled")
+    chunking_style = metadata.get("chunking_style")
+    top_k_value = metadata.get("top_k")
+    index_source = metadata.get("index_source")
+    if any(v is not None for v in [retrieval_mode, rerank_enabled, chunking_style, top_k_value, index_source]):
+        with st.expander("⚙️ Retrieval details", expanded=False):
+            if retrieval_mode:
+                st.write(f"Retrieval mode: {retrieval_mode}")
+            if rerank_enabled is not None:
+                st.write(f"Reranking: {'Enabled' if rerank_enabled else 'Disabled'}")
+            if chunking_style:
+                st.write(f"Chunking style: {chunking_style}")
+            if top_k_value is not None:
+                st.write(f"Top-k: {top_k_value}")
+            if index_source:
+                st.write(f"Index source: {index_source}")
 
-    if result.metadata and result.metadata.get("task_kind") == "structured_extraction":
+    if metadata.get("task_kind") == "structured_extraction":
         with st.expander("🧾 Extraction contract", expanded=False):
-            schema_name = result.metadata.get("schema_name")
-            schema_valid = result.metadata.get("schema_valid")
-            schema_source = result.metadata.get("schema_source")
-            schema_error_type = result.metadata.get("schema_error_type")
-            repair_attempted = result.metadata.get("repair_attempted")
-            repair_succeeded = result.metadata.get("repair_succeeded")
-            missing_fields = result.metadata.get("schema_missing_fields") or []
-            extra_fields = result.metadata.get("schema_extra_fields") or []
+            schema_name = metadata.get("schema_name")
+            schema_valid = metadata.get("schema_valid")
+            schema_source = metadata.get("schema_source")
+            schema_error_type = metadata.get("schema_error_type")
+            repair_attempted = metadata.get("repair_attempted")
+            repair_succeeded = metadata.get("repair_succeeded")
+            missing_fields = metadata.get("schema_missing_fields") or []
+            extra_fields = metadata.get("schema_extra_fields") or []
 
             if schema_name:
                 st.write(f"Schema: {schema_name}")
@@ -296,23 +345,22 @@ def display_result(pipe_name, result, show_sources, show_timing):
             if extra_fields:
                 st.write(f"Ignored extra fields: {', '.join(map(str, extra_fields))}")
 
-    # LangGraph-specific metadata
-    if result.metadata and pipe_name == "LangGraph Agent":
+    if pipe_name == "LangGraph Agent":
         with st.expander("🧠 Agent details", expanded=False):
-            quality = result.metadata.get("quality_score")
-            iterations = result.metadata.get("iterations")
+            quality = metadata.get("quality_score")
+            iterations = metadata.get("iterations")
             if quality is not None:
                 st.write(f"Quality score: {quality}/10")
             if iterations is not None:
                 st.write(f"Iterations: {iterations}")
 
-            sub_questions = result.metadata.get("sub_questions") or []
+            sub_questions = metadata.get("sub_questions") or []
             if sub_questions:
                 st.markdown("**Planned sub-questions**")
                 for item in sub_questions:
                     st.markdown(f"- {item}")
 
-            critique = result.metadata.get("critique")
+            critique = metadata.get("critique")
             if critique:
                 st.markdown("**Critique**")
                 st.code(critique)
@@ -329,6 +377,7 @@ def display_result(pipe_name, result, show_sources, show_timing):
                 )
 
 
+
 def display_chat_sources(sources):
     """Display sources in a compact expander inside a chat message."""
     if sources:
@@ -340,6 +389,7 @@ def display_chat_sources(sources):
                     f'<strong>{s["file"]}</strong> — Page {s["page"]}{score_str}</div>',
                     unsafe_allow_html=True,
                 )
+
 
 
 def display_chat_retrieval_debug(debug_info):
@@ -358,6 +408,14 @@ def display_chat_retrieval_debug(debug_info):
         st.code(retrieval_query)
 
 
+
+def display_chat_usage(debug_info):
+    """Display token and cost details for a chatbot turn."""
+    if not debug_info:
+        return
+    display_usage_block(debug_info.get("usage"), title="💸 Token & cost", expanded=False)
+
+
 # ==========================================================
 # CHATBOT MODE
 # ==========================================================
@@ -373,7 +431,6 @@ def run_chatbot_mode():
         st.warning("No PDFs found. Add PDF files to the `pdfs/` folder and restart.")
         st.stop()
 
-    # Initialise session state
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     if "chat_sources" not in st.session_state:
@@ -381,38 +438,34 @@ def run_chatbot_mode():
     if "chat_debug" not in st.session_state:
         st.session_state.chat_debug = {}
 
-    # Clear button
     col1, col2 = st.columns([6, 1])
     with col2:
         if st.button("🗑️ Clear", use_container_width=True):
             st.session_state.chat_messages = []
             st.session_state.chat_sources = {}
             st.session_state.chat_debug = {}
-            # Reset the chatbot's history
             bot = load_chatbot()
             bot.clear_history()
             st.rerun()
 
-    # Display conversation history
     for i, msg in enumerate(st.session_state.chat_messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if msg["role"] == "assistant":
+                debug_info = st.session_state.chat_debug.get(i)
                 if show_retrieval_debug:
-                    debug_info = st.session_state.chat_debug.get(i)
                     display_chat_retrieval_debug(debug_info)
+                if show_usage:
+                    display_chat_usage(debug_info)
                 if show_sources:
                     sources = st.session_state.chat_sources.get(i, [])
                     display_chat_sources(sources)
 
-    # Chat input
     if prompt := st.chat_input("Ask about your documents..."):
-        # Display user message
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate response
         with st.chat_message("assistant"):
             with st.spinner("Searching documents..."):
                 bot = load_chatbot()
@@ -426,10 +479,11 @@ def run_chatbot_mode():
                 st.caption(f"⏱️ {latency:.2f}s | Turn {bot.turn_count}")
             if show_retrieval_debug:
                 display_chat_retrieval_debug(debug_info)
+            if show_usage:
+                display_chat_usage(debug_info)
             if show_sources:
                 display_chat_sources(sources)
 
-        # Store response
         msg_idx = len(st.session_state.chat_messages)
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
         st.session_state.chat_sources[msg_idx] = sources
@@ -478,7 +532,7 @@ def run_explorer_mode():
                     with st.spinner(f"{name}..."):
                         try:
                             result = fn(query, task_type, top_k)
-                            display_result(name, result, show_sources, show_timing)
+                            display_result(name, result, show_sources, show_timing, show_usage)
                         except Exception as e:
                             st.error(f"{name} error: {e}")
         else:
@@ -490,7 +544,7 @@ def run_explorer_mode():
             with st.spinner(f"Running {pipeline_choice}..."):
                 try:
                     result = pipe_fn[pipeline_choice](query, task_type, top_k)
-                    display_result(pipeline_choice, result, show_sources, show_timing)
+                    display_result(pipeline_choice, result, show_sources, show_timing, show_usage)
                 except Exception as e:
                     st.error(f"Error: {e}")
     elif run_button:
